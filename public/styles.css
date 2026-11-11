@@ -669,3 +669,60 @@ textarea {
     grid-column: 1 / -1;
   }
 }
+
+/* ---------- Language switch + right-to-left ---------- */
+
+.lang-switch {
+  justify-self: end;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.lang-switch button {
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: transparent;
+  color: var(--muted);
+}
+
+.lang-switch button:hover {
+  background: var(--chip);
+}
+
+.lang-switch button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* In RTL the "previous" button sits on the right, so its arrow should point right. */
+[dir='rtl'] .icon-button {
+  transform: scaleX(-1);
+}
+
+[dir='rtl'] .tool-result .primary,
+[dir='rtl'] .batch-table th,
+[dir='rtl'] .batch-table td {
+  text-align: right;
+}
+
+[dir='rtl'] .skipped {
+  padding-left: 0;
+  padding-right: 18px;
+}
+
+/* Dates stay left-to-right inside Hebrew text. */
+[dir='rtl'] .batch-table td:first-child,
+[dir='rtl'] input[type='date'],
+[dir='rtl'] input[type='number'] {
+  direction: ltr;
+}
+
+[dir='rtl'] input[type='date'],
+[dir='rtl'] input[type='number'] {
+  text-align: right;
+}

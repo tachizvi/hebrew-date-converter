@@ -1,6 +1,7 @@
 // "Tools" card: Israeli business-day calculator and batch conversion.
 
-import { getJson, longGregorian, postJson } from './api.js';
+import { getJson, longGregorian, postJson, workdayReason } from './api.js';
+import { getLang, onLangChange, t } from './i18n.js';
 
 const MAX_BATCH = 100;
 
@@ -15,17 +16,17 @@ const tabs = [
 ];
 for (const { tab } of tabs) {
   tab.addEventListener('click', () => {
-    for (const t of tabs) {
-      t.tab.setAttribute('aria-selected', String(t.tab === tab));
-      t.panel.hidden = t.tab !== tab;
+    for (const other of tabs) {
+      other.tab.setAttribute('aria-selected', String(other.tab === tab));
+      other.panel.hidden = other.tab !== tab;
     }
   });
 }
 
-function setBusy(button, busy, idleLabel) {
+function setBusy(button, busy, idleKey) {
   button.disabled = busy;
   button.setAttribute('aria-busy', String(busy));
-  button.querySelector('.label').textContent = busy ? 'Working…' : idleLabel;
+  button.querySelector('.label').textContent = busy ? t('working') : t(idleKey);
 }
 
 function showError(el, message) {
@@ -45,41 +46,45 @@ const wdError = document.getElementById('wd-error');
 // Start from the date selected in the converter above (app.js fills it with today, local time).
 wdFrom.value = document.getElementById('date').value;
 
+let lastWorkdays = null;
+
+function renderWorkdays(data) {
+  const title = document.createElement('p');
+  title.className = 'primary';
+  title.textContent = longGregorian(data.result.date);
+
+  const summary = document.createElement('p');
+  summary.className = 'secondary';
+  summary.textContent =
+    t('wdSummary', { n: data.workdays, date: longGregorian(data.from, { weekday: 'short' }) }) +
+    (data.skipped.length ? t('wdSkipped', { n: data.skipped.length }) : '');
+
+  const list = document.createElement('ul');
+  list.className = 'skipped';
+  for (const day of data.skipped) {
+    const li = document.createElement('li');
+    li.textContent = `${longGregorian(day.date, { year: undefined, weekday: 'short' })} — ${workdayReason(day)}`;
+    list.append(li);
+  }
+
+  wdResult.replaceChildren(title, summary, ...(data.skipped.length ? [list] : []));
+  wdResult.hidden = false;
+}
+
 wdForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   showError(wdError, '');
   wdResult.hidden = true;
   const params = new URLSearchParams({ date: wdFrom.value, days: wdDays.value });
 
-  setBusy(wdButton, true, 'Calculate');
+  setBusy(wdButton, true, 'calculate');
   try {
-    const data = await getJson(`/api/workday/add?${params}`);
-
-    const title = document.createElement('p');
-    title.className = 'primary';
-    title.textContent = longGregorian(data.result.date);
-
-    const summary = document.createElement('p');
-    summary.className = 'secondary';
-    summary.textContent =
-      `${data.workdays} business day${data.workdays === 1 ? '' : 's'} after ` +
-      `${longGregorian(data.from, { weekday: 'short' })}` +
-      (data.skipped.length ? ` · ${data.skipped.length} non-working days skipped:` : '');
-
-    const list = document.createElement('ul');
-    list.className = 'skipped';
-    for (const day of data.skipped) {
-      const li = document.createElement('li');
-      li.textContent = `${longGregorian(day.date, { year: undefined, weekday: 'short' })} — ${day.reason}`;
-      list.append(li);
-    }
-
-    wdResult.replaceChildren(title, summary, ...(data.skipped.length ? [list] : []));
-    wdResult.hidden = false;
+    lastWorkdays = await getJson(`/api/workday/add?${params}`);
+    renderWorkdays(lastWorkdays);
   } catch (err) {
     showError(wdError, err.message);
   } finally {
-    setBusy(wdButton, false, 'Calculate');
+    setBusy(wdButton, false, 'calculate');
   }
 });
 
@@ -115,23 +120,20 @@ batchFile.addEventListener('change', async () => {
 batchButton.addEventListener('click', async () => {
   showError(batchError, '');
   const dates = parseDates(batchInput.value);
-  if (dates.length === 0) return showError(batchError, 'Enter at least one date.');
+  if (dates.length === 0) return showError(batchError, t('enterAtLeastOne'));
   if (dates.length > MAX_BATCH) {
-    return showError(
-      batchError,
-      `At most ${MAX_BATCH} dates per batch (you entered ${dates.length}).`,
-    );
+    return showError(batchError, t('tooManyDates', { max: MAX_BATCH, n: dates.length }));
   }
 
-  setBusy(batchButton, true, 'Convert all');
+  setBusy(batchButton, true, 'convertAll');
   try {
-    lastBatch = await postJson('/api/convert/batch', { dates });
+    lastBatch = await postJson('/api/convert/batch', { dates, lang: getLang() });
     renderBatch(lastBatch);
   } catch (err) {
     batchResult.hidden = true;
     showError(batchError, err.message);
   } finally {
-    setBusy(batchButton, false, 'Convert all');
+    setBusy(batchButton, false, 'convertAll');
   }
 });
 
@@ -145,9 +147,9 @@ function cell(text, attrs = {}) {
 function renderBatch(data) {
   const { total, succeeded, failed, uniqueConverted } = data.summary;
   batchSummary.textContent =
-    `${succeeded} of ${total} converted` +
-    (failed ? `, ${failed} failed` : '') +
-    ` · ${uniqueConverted} distinct date${uniqueConverted === 1 ? '' : 's'}`;
+    t('batchSummary', { ok: succeeded, total }) +
+    (failed ? t('batchFailed', { n: failed }) : '') +
+    t('batchDistinct', { n: uniqueConverted });
 
   batchRows.replaceChildren(
     ...data.results.map((r) => {
@@ -164,7 +166,10 @@ function renderBatch(data) {
         );
       } else {
         tr.className = 'failed';
-        tr.append(cell(r.input), cell('—'), cell(r.error.message));
+        // The API's message is English; in Hebrew, lead with the translated error type.
+        const message =
+          getLang() === 'he' ? `${t(r.error.code)} (${r.error.message})` : r.error.message;
+        tr.append(cell(r.input), cell('—'), cell(message));
       }
       return tr;
     }),
@@ -212,4 +217,13 @@ batchDownload.addEventListener('click', () => {
   a.download = 'hebrew-dates.csv';
   a.click();
   URL.revokeObjectURL(url);
+});
+
+// On a language switch, redraw the business-day result (it carries reasons in both
+// languages) and clear the batch table (its holiday names are in the old language).
+onLangChange(() => {
+  if (lastWorkdays && !wdResult.hidden) renderWorkdays(lastWorkdays);
+  batchResult.hidden = true;
+  lastBatch = null;
+  for (const el of [wdError, batchError]) showError(el, '');
 });

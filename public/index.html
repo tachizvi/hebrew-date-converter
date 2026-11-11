@@ -8,13 +8,20 @@
   </head>
   <body>
     <div class="page">
+      <div class="lang-switch" role="group" aria-label="Language / שפה">
+        <button type="button" data-lang="en" aria-pressed="true" lang="en">English</button>
+        <button type="button" data-lang="he" aria-pressed="false" lang="he">עברית</button>
+      </div>
+
       <main class="card converter">
         <header>
-          <h1>Hebrew Date Converter</h1>
-          <p class="subtitle">Convert between the Gregorian and the Hebrew calendar.</p>
+          <h1 data-i18n="title">Hebrew Date Converter</h1>
+          <p class="subtitle" data-i18n="subtitle">
+            Convert between the Gregorian and the Hebrew calendar.
+          </p>
         </header>
 
-        <div class="tabs" role="tablist" aria-label="Conversion direction">
+        <div class="tabs" role="tablist" data-i18n-aria="directionLabel">
           <button
             id="tab-g2h"
             class="tab"
@@ -22,6 +29,7 @@
             role="tab"
             aria-selected="true"
             aria-controls="convert-form"
+            data-i18n="tabG2h"
           >
             Gregorian → Hebrew
           </button>
@@ -32,6 +40,7 @@
             role="tab"
             aria-selected="false"
             aria-controls="hebrew-form"
+            data-i18n="tabH2g"
           >
             Hebrew → Gregorian
           </button>
@@ -39,33 +48,36 @@
 
         <form id="convert-form" role="tabpanel" aria-labelledby="tab-g2h" novalidate>
           <div class="field">
-            <label for="date">Gregorian date</label>
+            <label for="date" data-i18n="gregorianDate">Gregorian date</label>
             <input id="date" name="date" type="date" required />
           </div>
 
           <label class="checkbox">
             <input id="afterSunset" name="afterSunset" type="checkbox" />
-            After sunset <span class="hint">(the Hebrew day starts at nightfall)</span>
+            <span data-i18n="afterSunset">After sunset</span>
+            <span class="hint" data-i18n="afterSunsetHint"
+              >(the Hebrew day starts at nightfall)</span
+            >
           </label>
 
           <button id="submit" type="submit">
             <span class="spinner" aria-hidden="true"></span>
-            <span class="label">Convert</span>
+            <span class="label" data-i18n="convert">Convert</span>
           </button>
         </form>
 
         <form id="hebrew-form" role="tabpanel" aria-labelledby="tab-h2g" novalidate hidden>
           <div class="hebrew-fields">
             <div class="field">
-              <label for="h-day">Day</label>
+              <label for="h-day" data-i18n="day">Day</label>
               <select id="h-day" name="day"></select>
             </div>
             <div class="field">
-              <label for="h-month">Month</label>
+              <label for="h-month" data-i18n="month">Month</label>
               <select id="h-month" name="month"></select>
             </div>
             <div class="field">
-              <label for="h-year">Year</label>
+              <label for="h-year" data-i18n="year">Year</label>
               <input id="h-year" name="year" type="number" min="3762" max="9999" required />
             </div>
           </div>
@@ -73,7 +85,7 @@
 
           <button id="h-submit" type="submit">
             <span class="spinner" aria-hidden="true"></span>
-            <span class="label">Convert</span>
+            <span class="label" data-i18n="convert">Convert</span>
           </button>
         </form>
 
@@ -82,7 +94,7 @@
           <p id="secondary" class="secondary"></p>
           <p id="workday" class="workday-badge" hidden></p>
           <div class="events-block">
-            <h2>Events</h2>
+            <h2 data-i18n="events">Events</h2>
             <ul id="events" class="events"></ul>
           </div>
           <p id="meta" class="meta"></p>
@@ -93,34 +105,58 @@
 
       <section class="card calendar-card" aria-labelledby="cal-title">
         <div class="cal-header">
-          <button id="cal-prev" class="icon-button" type="button" aria-label="Previous month">
+          <button
+            id="cal-prev"
+            class="icon-button"
+            type="button"
+            aria-label="Previous month"
+            data-i18n-aria="prevMonth"
+          >
             ‹
           </button>
           <div class="cal-titles">
             <h2 id="cal-title">&nbsp;</h2>
             <p id="cal-hebrew-months" class="cal-hebrew-months" dir="rtl" lang="he">&nbsp;</p>
           </div>
-          <button id="cal-next" class="icon-button" type="button" aria-label="Next month">›</button>
+          <button
+            id="cal-next"
+            class="icon-button"
+            type="button"
+            aria-label="Next month"
+            data-i18n-aria="nextMonth"
+          >
+            ›
+          </button>
         </div>
 
-        <div class="cal-weekdays" aria-hidden="true">
-          <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span
-          ><span>Fri</span><span>Sat</span>
-        </div>
+        <!-- Weekday names are filled in by app.js in the UI language. -->
+        <div id="cal-weekdays" class="cal-weekdays" aria-hidden="true"></div>
         <div id="cal-grid" class="cal-grid" role="grid" aria-busy="true"></div>
-        <ul class="cal-legend" aria-label="Legend">
-          <li><span class="swatch day-holiday"></span>Holiday (day off)</li>
-          <li><span class="swatch day-holiday_eve"></span>Holiday eve</li>
-          <li><span class="swatch day-chol_hamoed"></span>Chol HaMoed</li>
-          <li><span class="swatch day-weekend"></span>Weekend (Fri–Sat)</li>
+        <ul class="cal-legend" aria-label="Legend" data-i18n-aria="legend">
+          <li>
+            <span class="swatch day-holiday"></span
+            ><span data-i18n="legendHoliday">Holiday (day off)</span>
+          </li>
+          <li>
+            <span class="swatch day-holiday_eve"></span
+            ><span data-i18n="legendEve">Holiday eve</span>
+          </li>
+          <li>
+            <span class="swatch day-chol_hamoed"></span
+            ><span data-i18n="legendChol">Chol HaMoed</span>
+          </li>
+          <li>
+            <span class="swatch day-weekend"></span
+            ><span data-i18n="legendWeekend">Weekend (Fri–Sat)</span>
+          </li>
         </ul>
         <p id="cal-error" class="error" role="alert" hidden></p>
         <p id="cal-meta" class="meta"></p>
       </section>
 
       <section class="card tools-card" aria-labelledby="tools-title">
-        <h2 id="tools-title">Tools</h2>
-        <div class="tabs" role="tablist" aria-label="Tools">
+        <h2 id="tools-title" data-i18n="tools">Tools</h2>
+        <div class="tabs" role="tablist" aria-label="Tools" data-i18n-aria="toolsLabel">
           <button
             id="tab-workdays"
             class="tab"
@@ -128,6 +164,7 @@
             role="tab"
             aria-selected="true"
             aria-controls="workdays-panel"
+            data-i18n="businessDays"
           >
             Business days
           </button>
@@ -138,28 +175,29 @@
             role="tab"
             aria-selected="false"
             aria-controls="batch-panel"
+            data-i18n="batchConvert"
           >
             Batch convert
           </button>
         </div>
 
         <div id="workdays-panel" role="tabpanel" aria-labelledby="tab-workdays">
-          <p class="hint">
+          <p class="hint" data-i18n="wdHint">
             When is a date N Israeli business days from now? Weekends (Fri–Sat) and holidays are
             skipped; holiday eves and Chol HaMoed count as workdays.
           </p>
           <form id="workdays-form" class="inline-form" novalidate>
             <div class="field">
-              <label for="wd-from">From</label>
+              <label for="wd-from" data-i18n="from">From</label>
               <input id="wd-from" type="date" required />
             </div>
             <div class="field">
-              <label for="wd-days">Business days</label>
+              <label for="wd-days" data-i18n="businessDaysCount">Business days</label>
               <input id="wd-days" type="number" min="1" max="100" value="5" required />
             </div>
             <button id="wd-submit" type="submit">
               <span class="spinner" aria-hidden="true"></span>
-              <span class="label">Calculate</span>
+              <span class="label" data-i18n="calculate">Calculate</span>
             </button>
           </form>
           <div id="wd-result" class="tool-result" aria-live="polite" hidden></div>
@@ -167,30 +205,42 @@
         </div>
 
         <div id="batch-panel" role="tabpanel" aria-labelledby="tab-batch" hidden>
-          <p class="hint">
+          <p class="hint" data-i18n="batchHint">
             Paste up to 100 dates (YYYY-MM-DD), one per line or comma-separated, or load a CSV file.
             Invalid lines are reported without failing the rest.
           </p>
-          <textarea id="batch-input" rows="6" spellcheck="false" aria-label="Dates to convert">
+          <textarea
+            id="batch-input"
+            rows="6"
+            spellcheck="false"
+            dir="ltr"
+            aria-label="Dates to convert"
+            data-i18n-aria="datesToConvert"
+          >
 2026-11-11
 2027-04-22
 2026-02-30
 2026-11-11</textarea>
           <div class="batch-actions">
             <label class="file-button">
-              Load CSV…
+              <span data-i18n="loadCsv">Load CSV…</span>
               <input id="batch-file" type="file" accept=".csv,.txt,text/csv,text/plain" />
             </label>
             <button id="batch-submit" type="button">
               <span class="spinner" aria-hidden="true"></span>
-              <span class="label">Convert all</span>
+              <span class="label" data-i18n="convertAll">Convert all</span>
             </button>
           </div>
           <p id="batch-error" class="error" role="alert" hidden></p>
           <div id="batch-result" aria-live="polite" hidden>
             <div class="batch-summary">
               <p id="batch-summary"></p>
-              <button id="batch-download" class="secondary-button" type="button">
+              <button
+                id="batch-download"
+                class="secondary-button"
+                type="button"
+                data-i18n="downloadCsv"
+              >
                 Download CSV
               </button>
             </div>
@@ -198,9 +248,9 @@
               <table class="batch-table">
                 <thead>
                   <tr>
-                    <th scope="col">Input</th>
-                    <th scope="col">Hebrew date</th>
-                    <th scope="col">Details</th>
+                    <th scope="col" data-i18n="thInput">Input</th>
+                    <th scope="col" data-i18n="thHebrew">Hebrew date</th>
+                    <th scope="col" data-i18n="thDetails">Details</th>
                   </tr>
                 </thead>
                 <tbody id="batch-rows"></tbody>
@@ -211,18 +261,22 @@
       </section>
 
       <footer>
-        Data from the
+        <span data-i18n="footerData">Data from the</span>
         <a
           href="https://www.hebcal.com/home/219/hebrew-date-converter-rest-api"
           target="_blank"
           rel="noopener"
           >Hebcal REST API</a
         >
-        through this service's own API (<code>/api/convert</code>, <code>/api/convert-hebrew</code>,
-        <code>/api/calendar</code>, <code>/api/workday</code>, <code>/api/convert/batch</code>).
+        <span data-i18n="footerVia">through this service's own API</span>
+        <span dir="ltr"
+          >(<code>/api/convert</code>, <code>/api/convert-hebrew</code>, <code>/api/calendar</code>,
+          <code>/api/workday</code>, <code>/api/convert/batch</code>)</span
+        >.
       </footer>
     </div>
 
+    <!-- i18n.js loads first (imported by both scripts) and applies the saved language. -->
     <script type="module" src="app.js"></script>
     <script type="module" src="tools.js"></script>
   </body>

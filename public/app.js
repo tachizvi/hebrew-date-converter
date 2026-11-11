@@ -1,7 +1,8 @@
 // Front end for the converter. It only talks to our own API
 // (/api/convert, /api/convert-hebrew, /api/calendar, /api/workday), never to Hebcal directly.
 
-import { ERROR_MESSAGES, getJson, longGregorian, workdayLabel } from './api.js';
+import { getJson, longGregorian, withLang, workdayLabel } from './api.js';
+import { getLang, locale, onLangChange, t } from './i18n.js';
 
 const form = document.getElementById('convert-form');
 const dateInput = document.getElementById('date');
@@ -61,6 +62,8 @@ const state = {
   mode: 'g2h',
   /** Hebrew date of the last result, used to prefill the Hebrew form. */
   lastHebrew: null,
+  /** The last successful result and its mode, re-rendered when the language changes. */
+  lastResult: null,
   /** YYYY-MM of the calendar currently shown */
   shownMonth: null,
   /**
@@ -95,9 +98,34 @@ function monthLabel(month) {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(0);
   d.setUTCFullYear(y, m - 1, 1);
-  return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
-    d,
+  return new Intl.DateTimeFormat(locale(), {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(d);
+}
+
+/** Weekday headers (Sunday first) in the UI language. 2023-01-01 was a Sunday. */
+function renderWeekdays() {
+  const fmt = new Intl.DateTimeFormat(locale(), { weekday: 'short', timeZone: 'UTC' });
+  document.getElementById('cal-weekdays').replaceChildren(
+    ...Array.from({ length: 7 }, (_, i) => {
+      const span = document.createElement('span');
+      span.textContent = fmt.format(new Date(Date.UTC(2023, 0, 1 + i)));
+      return span;
+    }),
   );
+}
+
+/**
+ * Wraps Latin text (dates, "1 Kislev 5787") in a left-to-right <bdi>, so it keeps
+ * its order inside a right-to-left (Hebrew) page.
+ */
+function ltr(text) {
+  const el = document.createElement('bdi');
+  el.dir = 'ltr';
+  el.textContent = text;
+  return el;
 }
 
 // ---------- single date ----------
@@ -106,7 +134,7 @@ function setLoading(isLoading) {
   for (const b of [button, hButton]) {
     b.disabled = isLoading;
     b.setAttribute('aria-busy', String(isLoading));
-    b.querySelector('.label').textContent = isLoading ? 'Converting…' : 'Convert';
+    b.querySelector('.label').textContent = isLoading ? t('converting') : t('convert');
   }
 }
 
@@ -119,6 +147,7 @@ function showError(message) {
 function showResult(data, mode) {
   errorEl.hidden = true;
   state.lastHebrew = data.hebrew;
+  state.lastResult = { data, mode };
 
   // textContent (not innerHTML) so nothing from the API can inject markup.
   const primary = document.getElementById('primary');
@@ -126,19 +155,19 @@ function showResult(data, mode) {
   const transliteration = `${data.hebrew.day} ${data.hebrew.month} ${data.hebrew.year}`;
 
   if (mode === 'h2g') {
-    primary.lang = 'en';
-    primary.dir = 'ltr';
+    primary.lang = getLang();
+    primary.dir = getLang() === 'he' ? 'rtl' : 'ltr';
     primary.textContent = longGregorian(data.gregorian.date);
     // <bdi> keeps the Hebrew text's direction from scrambling the English around it.
     const heb = document.createElement('bdi');
     heb.lang = 'he';
     heb.textContent = data.hebrew.hebrewText;
-    secondary.replaceChildren(heb, ` · ${transliteration}`);
+    secondary.replaceChildren(heb, ' · ', ltr(transliteration));
   } else {
     primary.lang = 'he';
     primary.dir = 'rtl';
     primary.textContent = data.hebrew.hebrewText;
-    secondary.textContent = transliteration;
+    secondary.replaceChildren(ltr(transliteration));
   }
 
   const list = document.getElementById('events');
@@ -146,7 +175,7 @@ function showResult(data, mode) {
   if (data.events.length === 0) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = 'No special events on this day.';
+    li.textContent = t('noEvents');
     list.append(li);
   } else {
     for (const event of data.events) {
@@ -156,11 +185,15 @@ function showResult(data, mode) {
     }
   }
 
-  document.getElementById('meta').textContent =
-    (mode === 'h2g'
-      ? `${transliteration} → ${data.gregorian.date} · `
-      : `${data.gregorian.date}${data.gregorian.afterSunset ? ' (after sunset)' : ''} · `) +
-    (data.cached ? 'served from cache' : 'fetched from Hebcal');
+  document
+    .getElementById('meta')
+    .replaceChildren(
+      ...(mode === 'h2g'
+        ? [ltr(`${transliteration} → ${data.gregorian.date}`)]
+        : [ltr(data.gregorian.date), data.gregorian.afterSunset ? t('afterSunsetNote') : '']),
+      ' · ',
+      data.cached ? t('servedFromCache') : t('fetchedFromHebcal'),
+    );
 
   resultEl.hidden = false;
 }
@@ -168,7 +201,7 @@ function showResult(data, mode) {
 async function convert() {
   const date = dateInput.value;
   if (!date) {
-    showError(ERROR_MESSAGES.INVALID_DATE);
+    showError(t('INVALID_DATE'));
     return;
   }
 
@@ -183,7 +216,7 @@ async function convert() {
   const seq = ++state.convertSeq;
   setLoading(true);
   try {
-    const data = await getJson(`/api/convert?${params}`);
+    const data = await getJson(withLang(`/api/convert?${params}`));
     if (seq === state.convertSeq) {
       showResult(data, 'g2h');
       showWorkday(data.gregorian.date, seq);
@@ -225,14 +258,29 @@ function fillHebrewMonths() {
 
   hMonth.replaceChildren(
     ...HEBREW_MONTHS.filter((m) => (leap ? !m.regularYearOnly : !m.leapYearOnly)).map((m) => {
+      if (getLang() === 'he') return new Option(m.hebrew, m.code);
       const label = m.hebcalName === 'Adar I' || m.hebcalName === 'Adar II' ? m.hebcalName : m.code;
       return new Option(`${label} · ${m.hebrew}`, m.code);
     }),
   );
   if (selected) hMonth.value = selected;
-  hLeap.textContent = Number.isInteger(year)
-    ? `${year} is ${leap ? 'a leap year (13 months)' : 'a regular year (12 months)'}`
-    : '';
+  hLeap.textContent = Number.isInteger(year) ? t(leap ? 'leapYear' : 'regularYear', { year }) : '';
+}
+
+/**
+ * Day options. In English: "1 · א׳" - the left-to-right mark (\u200E) stops the
+ * browser's bidi algorithm from reordering it to "א׳ · 1". In Hebrew: "א׳ (1)".
+ */
+function fillHebrewDays() {
+  const selected = hDay.value;
+  hDay.replaceChildren(
+    ...HEBREW_DAYS.map((letters, i) =>
+      getLang() === 'he'
+        ? new Option(`${letters} (${i + 1})`, String(i + 1))
+        : new Option(`\u200E${i + 1} · ${letters}`, String(i + 1)),
+    ),
+  );
+  if (selected) hDay.value = selected;
 }
 
 function prefillHebrewForm() {
@@ -251,7 +299,7 @@ async function convertFromHebrew() {
   const seq = ++state.convertSeq;
   setLoading(true);
   try {
-    const data = await getJson(`/api/convert-hebrew?${params}`);
+    const data = await getJson(withLang(`/api/convert-hebrew?${params}`));
     if (seq !== state.convertSeq) return;
     showResult(data, 'h2g');
     showWorkday(data.gregorian.date, seq);
@@ -283,10 +331,15 @@ function setMode(mode) {
  * on every day, which would clutter the grid, so it is shown on Shabbat only.
  */
 function cellEvent(day) {
-  const special = day.events.filter((e) => !e.startsWith('Parashat '));
+  const special = day.events.filter((e) => !isParasha(e));
   if (special.length > 0) return special[0];
-  if (day.weekday === 6) return day.events.find((e) => e.startsWith('Parashat ')) ?? '';
+  if (day.weekday === 6) return day.events.find(isParasha) ?? '';
   return '';
+}
+
+/** "Parashat Toldot" or, with lang=he, "פָּרָשַׁת תּוֹלְדוֹת" (nikud stripped before comparing). */
+function isParasha(event) {
+  return event.startsWith('Parashat ') || event.replace(/[\u0591-\u05C7]/g, '').startsWith('פרשת');
 }
 
 /** e.g. "חשון – כסלו תשפ״ז", or "אלול תשפ״ו – תשרי תשפ״ז" across a Hebrew new year. */
@@ -357,9 +410,10 @@ function renderCalendar(data, workdays) {
   }
 
   calGrid.replaceChildren(...cells);
-  calMeta.textContent = `${data.days.length} days in one Hebcal range request · ${
-    data.cached ? 'served from cache' : 'fetched from Hebcal'
-  }`;
+  calMeta.textContent = t('calMeta', {
+    n: data.days.length,
+    source: data.cached ? t('servedFromCache') : t('fetchedFromHebcal'),
+  });
   highlightSelected();
 }
 
@@ -386,7 +440,7 @@ async function loadCalendar(month) {
     // Both requests in parallel. The workday colouring is optional: if it fails,
     // the calendar still renders without it.
     const [calendar, workdays] = await Promise.allSettled([
-      getJson(`/api/calendar?month=${month}`),
+      getJson(withLang(`/api/calendar?month=${month}`)),
       getJson(`/api/workday/month?month=${month}`),
     ]);
     if (seq !== state.calendarSeq) return;
@@ -435,11 +489,7 @@ hYear.addEventListener('input', fillHebrewMonths);
 tabG2h.addEventListener('click', () => setMode('g2h'));
 tabH2g.addEventListener('click', () => setMode('h2g'));
 
-// The left-to-right mark (\u200E) keeps "1 · א׳" from being reordered by the
-// browser's bidi algorithm, which would show it as "א׳ · 1".
-hDay.replaceChildren(
-  ...HEBREW_DAYS.map((letters, i) => new Option(`\u200E${i + 1} · ${letters}`, String(i + 1))),
-);
+fillHebrewDays();
 
 document
   .getElementById('cal-prev')
@@ -448,5 +498,19 @@ document
   .getElementById('cal-next')
   .addEventListener('click', () => loadCalendar(shiftMonth(state.shownMonth, 1)));
 
+/**
+ * Language switch: re-render everything that holds translated text, and ask the
+ * API again so holiday names come back in the new language (cached separately).
+ */
+onLangChange(() => {
+  renderWeekdays();
+  fillHebrewDays();
+  fillHebrewMonths();
+  if (state.shownMonth) loadCalendar(state.shownMonth);
+  if (state.lastResult?.mode === 'h2g') convertFromHebrew();
+  else if (dateInput.value) convert();
+});
+
+renderWeekdays();
 dateInput.value = todayLocal();
 convert();

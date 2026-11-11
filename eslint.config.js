@@ -26,6 +26,8 @@ export default tseslint.config(
         Option: 'readonly',
         URL: 'readonly',
         Blob: 'readonly',
+        localStorage: 'readonly',
+        navigator: 'readonly',
       },
     },
   },
