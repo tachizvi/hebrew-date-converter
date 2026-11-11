@@ -7,6 +7,9 @@ The browser never calls Hebcal directly. It calls this service's own API, which 
 input, calls Hebcal with a timeout and retry, validates Hebcal's answer, maps it to a clean
 response format, and caches the result.
 
+Selecting a date also shows its **Gregorian month as a calendar with the Hebrew date in every
+day**, built from a single Hebcal _range_ request per month.
+
 ![screenshot](docs/screenshot.jpg)
 
 ## Quick start
@@ -35,13 +38,16 @@ Logs are JSON lines. For readable logs in development: `npm run dev | npx pino-p
 ```
 Browser (public/)            This service (src/)                                   Hebcal
 ─────────────────            ──────────────────────────────────────────────────    ──────────
-index.html + app.js  ──GET /api/convert?date=──▶  routes/convert.ts
+index.html + app.js  ──GET /api/convert?date=───▶  routes/convert.ts
+                     ──GET /api/calendar?month=─▶  routes/calendar.ts
                                                      │ validation/dateQuery.ts  (400 if invalid)
                                                      ▼
                                                   services/converterService.ts ──▶ lib/cache.ts
-                                                     │ (cache miss)
+                                                     │ (cache miss)                (dates, months)
                                                      ▼
                                                   services/hebcalClient.ts  ──HTTPS──▶ /converter
+                                                     │ convert():      ?gy&gm&gd        (one date)
+                                                     │ convertMonth(): ?start&end       (range)
                                                      │ timeout, retry, schema check, map to DTO
                                                      ▼
                      ◀── JSON (DTO) or JSON error ── middleware/errorHandler.ts
@@ -51,8 +57,8 @@ index.html + app.js  ──GET /api/convert?date=──▶  routes/convert.ts
 | ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Composition root | `src/server.ts`                                       | Reads config, wires real dependencies, starts the server, graceful shutdown                 |
 | App              | `src/app.ts`                                          | Express app factory: request logging + request id, routes, static files, error handler      |
-| Route            | `src/routes/convert.ts`                               | HTTP only: parse query → call service → send JSON                                           |
-| Validation       | `src/validation/dateQuery.ts`                         | Strict `YYYY-MM-DD`, real calendar date, `afterSunset` flag                                 |
+| Routes           | `src/routes/convert.ts`, `src/routes/calendar.ts`     | HTTP only: parse query → call service → send JSON                                           |
+| Validation       | `src/validation/dateQuery.ts`, `src/lib/dates.ts`     | Strict `YYYY-MM-DD` / `YYYY-MM`, real calendar dates, `afterSunset` flag                    |
 | Service          | `src/services/converterService.ts`                    | Business logic: cache lookup, call client, store result                                     |
 | Integration      | `src/services/hebcalClient.ts`                        | Everything about Hebcal: URL, timeout, retry, status handling, response validation, mapping |
 | Errors           | `src/lib/errors.ts`, `src/middleware/errorHandler.ts` | Typed errors → one consistent JSON error shape                                              |
@@ -113,6 +119,45 @@ Every error has the same shape, with a stable `code` the client can switch on, a
 | 404  | `NOT_FOUND`             | Unknown `/api` route                                                                 |
 | 500  | `INTERNAL_ERROR`        | Unexpected bug (details logged, never sent to the client)                            |
 
+### `GET /api/calendar`
+
+Every day of a Gregorian month with its Hebrew date and events, from **one** Hebcal range request
+(`?start=2026-11-01&end=2026-11-30&g2h=1`) instead of ~30 single-date requests.
+
+| Query param | Required | Example   | Notes                      |
+| ----------- | -------- | --------- | -------------------------- |
+| `month`     | yes      | `2026-11` | `YYYY-MM`, years 0001–9999 |
+
+```bash
+curl "http://localhost:3000/api/calendar?month=2026-11"
+```
+
+`200 OK` (shortened)
+
+```json
+{
+  "month": "2026-11",
+  "days": [
+    {
+      "date": "2026-11-11",
+      "weekday": 3,
+      "hebrew": {
+        "year": 5787,
+        "month": "Kislev",
+        "day": 1,
+        "hebrewText": "א׳ בְּכִסְלֵו תשפ״ז",
+        "parts": { "day": "א׳", "month": "כסלו", "year": "תשפ״ז" }
+      },
+      "events": ["Rosh Chodesh Kislev", "Parashat Toldot"]
+    }
+  ],
+  "source": "hebcal",
+  "cached": false
+}
+```
+
+`weekday` is 0 = Sunday … 6 = Saturday. Errors use the same shape and codes as `/api/convert`.
+
 ### `GET /api/health`
 
 `{ "status": "ok", "uptimeSeconds": 42 }` — liveness check; does not call Hebcal.
@@ -139,7 +184,8 @@ clear message instead of failing later.
   behind one integration point where we control validation, error handling, caching and logging,
   and lets us change provider without touching the client.
 - **Our own response format (DTO).** Hebcal's fields (`hy`, `hm`, `hd`, `heDateParts`) are mapped
-  to readable names in one place (`toDto` in `hebcalClient.ts`). Clients depend on our contract,
+  to readable names in one place (`toHebrewPart` in `hebcalClient.ts`), shared by the single-date
+  and range calls. Clients depend on our contract,
   not on Hebcal's.
 - **Validate on the way in and on the way out.** Input is validated before any network call, so a
   bad date never costs a round trip. Hebcal's response is validated with a Zod schema, so an
@@ -149,9 +195,12 @@ clear message instead of failing later.
   whole exchange, including reading the body. Only transient failures (network error, 5xx) are
   retried, with a short backoff. Timeouts are not retried (we already waited the full budget), and
   4xx / bad payloads are not retried (asking again won't change the answer).
+- **One range call per month.** The calendar needs ~30 conversions. Instead of 30 requests (slow,
+  and unfriendly to a free public API) the client uses Hebcal's range mode once per month, and the
+  page fetches a month only when the shown month changes.
 - **Caching.** A date's Hebrew equivalent never changes; Hebcal itself returns
-  `Cache-Control: max-age=31536000`. An in-memory LRU cache with a TTL keyed by
-  `date + afterSunset` avoids repeat calls. Errors are never cached.
+  `Cache-Control: max-age=31536000`. Two in-memory LRU caches with a TTL: single dates keyed by
+  `date + afterSunset`, and months keyed by `YYYY-MM`. Errors are never cached.
 - **Errors as types.** Each failure is a subclass of `AppError` with an HTTP status and code. One
   middleware converts them into the error JSON; unknown errors become a generic 500 and are logged
   with their stack.
@@ -166,14 +215,17 @@ clear message instead of failing later.
 npm test
 ```
 
-- `tests/unit/dateQuery.test.ts` — formats, impossible dates, leap years, `afterSunset`.
+- `tests/unit/dateQuery.test.ts` — date and month query formats, impossible dates, `afterSunset`.
+- `tests/unit/dates.test.ts` — leap years, month lengths, weekdays (also for years below 100).
 - `tests/unit/cache.test.ts` — TTL expiry and LRU eviction.
 - `tests/unit/hebcalClient.test.ts` — URL building, mapping, retry on 5xx, no retry on 4xx or
-  timeout, network failure, non-JSON body, schema mismatch. Uses a real response captured from
-  Hebcal as the fixture.
-- `tests/integration/convert.route.test.ts` — HTTP-level tests with Supertest through the whole
-  stack (route → service → cache → client → error middleware) with only `fetch` faked: 200, cache
-  hit, 400, 502, 504, request-id propagation, 404, health.
+  timeout, network failure, non-JSON body, schema mismatch. Range mode: one call per month, leap
+  February, truncated range rejected, single-date payload where a range was expected rejected.
+  Uses real responses captured from Hebcal as fixtures.
+- `tests/integration/api.routes.test.ts` — HTTP-level tests with Supertest through the whole
+  stack (route → service → cache → client → error middleware) with only `fetch` faked, for both
+  `/api/convert` and `/api/calendar`: 200, cache hit, 400, 502, 504, incomplete range,
+  request-id propagation, 404, health.
 
 GitHub Actions runs lint, type check, tests and build on every push (`.github/workflows/ci.yml`).
 
@@ -191,6 +243,20 @@ GitHub Actions runs lint, type check, tests and build on every push (`.github/wo
   the user.
 - **Timeouts that really time out.** Clearing the timer once headers arrive would let a server
   that stalls while sending the body hang the request, so the timeout covers the body read too.
+- **Hebcal's range mode has silent edge cases** (found by probing it with curl):
+  - a range longer than 180 days is **truncated without any error**;
+  - `start` after `end` returns a **single-date object** - a completely different shape;
+  - `gs=on` (after sunset) is ignored in range mode.
+
+  The client therefore validates the range payload with its own schema and checks that **every
+  requested day** is present; anything else is a `502 UPSTREAM_BAD_RESPONSE`, never a calendar
+  with holes. The calendar shows daytime dates, and "after sunset" applies to the single
+  conversion.
+
+- **Out-of-order responses in the UI.** Clicking through months quickly can make a slow response
+  arrive after a newer one. Each request gets a sequence number and only the latest one renders.
+- **Weekday for old dates.** `Date.UTC(33, 0, 1)` means 1933, not year 33. The date helpers use
+  `setUTCFullYear` and plain arithmetic for month lengths, so the grid is correct for any year.
 - **"Today" in the right time zone.** `new Date().toISOString()` is UTC and can be a day off in
   Israel late at night; the page computes today's date from local time.
 - **Hebrew in an English page.** The Hebrew date is rendered in its own `dir="rtl" lang="he"`
@@ -202,4 +268,5 @@ GitHub Actions runs lint, type check, tests and build on every push (`.github/wo
 - Shared cache (Redis) when running more than one instance.
 - Rate limiting and a circuit breaker around Hebcal.
 - OpenAPI spec for the API, Dockerfile, and deployment.
-- Hebrew → Gregorian direction (`h2g=1`).
+- Hebrew → Gregorian direction (`h2g=1`), and a Hebrew-month calendar view.
+- Prefetch the neighbouring months for instant calendar navigation.
