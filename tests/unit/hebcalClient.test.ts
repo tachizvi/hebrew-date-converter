@@ -5,7 +5,13 @@ import {
   UpstreamUnavailableError,
 } from '../../src/lib/errors.js';
 import { createHebcalClient } from '../../src/services/hebcalClient.js';
-import { hangingFetch, hebcalKislev1, jsonResponse, silentLogger } from '../helpers.js';
+import {
+  hangingFetch,
+  hebcalKislev1,
+  hebcalRange,
+  jsonResponse,
+  silentLogger,
+} from '../helpers.js';
 
 const query = { year: 2026, month: 11, day: 11, afterSunset: false };
 
@@ -116,5 +122,65 @@ describe('hebcalClient', () => {
   it('rejects a payload that does not match the expected schema', async () => {
     const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse({ ...hebcalKislev1, hy: 'five' }));
     await expect(client(fetchFn).convert(query)).rejects.toThrow(/unexpected payload/);
+  });
+});
+
+describe('hebcalClient.convertMonth (range mode)', () => {
+  it('requests the whole month in one call and maps every day', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalRange(2026, 11)));
+
+    const month = await client(fetchFn).convertMonth({ year: 2026, month: 11 });
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    const url = new URL(String(fetchFn.mock.calls[0]![0]));
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      cfg: 'json',
+      g2h: '1',
+      start: '2026-11-01',
+      end: '2026-11-30',
+    });
+    expect(month.month).toBe('2026-11');
+    expect(month.days).toHaveLength(30);
+    expect(month.days[0]).toMatchObject({ date: '2026-11-01', weekday: 0 });
+    expect(month.days[10]).toMatchObject({
+      date: '2026-11-11',
+      weekday: 3,
+      hebrew: { month: 'Cheshvan', day: 11, parts: { month: 'חשון' } },
+      events: ['Rosh Chodesh Kislev'],
+    });
+  });
+
+  it('handles February in a leap year', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalRange(2028, 2)));
+    const month = await client(fetchFn).convertMonth({ year: 2028, month: 2 });
+    expect(new URL(String(fetchFn.mock.calls[0]![0])).searchParams.get('end')).toBe('2028-02-29');
+    expect(month.days).toHaveLength(29);
+  });
+
+  it('rejects a truncated range instead of returning a calendar with holes', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      jsonResponse(hebcalRange(2026, 11, { omit: ['2026-11-29', '2026-11-30'] })),
+    );
+    await expect(client(fetchFn).convertMonth({ year: 2026, month: 11 })).rejects.toThrow(
+      /28 of 30 days/,
+    );
+  });
+
+  it('rejects a single-date payload where a range was expected', async () => {
+    // Hebcal answers start > end with a single-date object - a different shape.
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalKislev1));
+    await expect(client(fetchFn).convertMonth({ year: 2026, month: 11 })).rejects.toBeInstanceOf(
+      UpstreamBadResponseError,
+    );
+  });
+
+  it('retries a 5xx in range mode too', async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}, 502))
+      .mockResolvedValueOnce(jsonResponse(hebcalRange(2026, 11)));
+    const month = await client(fetchFn).convertMonth({ year: 2026, month: 11 });
+    expect(month.days).toHaveLength(30);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 });

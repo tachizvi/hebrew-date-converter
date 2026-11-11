@@ -5,6 +5,7 @@ import express, { type Express } from 'express';
 import { pinoHttp } from 'pino-http';
 import type { Logger } from './lib/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { calendarRouter } from './routes/calendar.js';
 import { convertRouter } from './routes/convert.js';
 import { healthRouter } from './routes/health.js';
 import type { ConverterService } from './services/converterService.js';
@@ -42,6 +43,7 @@ export function createApp({ converterService, logger }: AppDeps): Express {
 
   app.use('/api', healthRouter());
   app.use('/api', convertRouter(converterService));
+  app.use('/api', calendarRouter(converterService));
   app.use('/api', notFoundHandler);
 
   app.use(express.static(publicDir));

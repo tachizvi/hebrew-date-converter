@@ -1,16 +1,9 @@
 import { z } from 'zod';
 import { ValidationError } from '../lib/errors.js';
-import type { ConvertQuery } from '../types/dto.js';
+import { isRealCalendarDate } from '../lib/dates.js';
+import type { CalendarQuery, ConvertQuery } from '../types/dto.js';
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-/** True only for dates that exist in the calendar (rejects 2025-02-30, 2023-02-29...). */
-export function isRealCalendarDate(year: number, month: number, day: number): boolean {
-  if (month < 1 || month > 12 || day < 1) return false;
-  // Day 0 of the next month is the last day of this month.
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return day <= daysInMonth;
-}
 
 const querySchema = z.object({
   date: z
@@ -45,12 +38,24 @@ export function parseConvertQuery(raw: unknown): ConvertQuery {
   return { year, month, day, afterSunset: parsed.data.afterSunset === 'true' };
 }
 
-/** Formats a ConvertQuery back to YYYY-MM-DD (also used as part of the cache key). */
-export function toIsoDate({
-  year,
-  month,
-  day,
-}: Pick<ConvertQuery, 'year' | 'month' | 'day'>): string {
-  const pad = (n: number, len: number) => String(n).padStart(len, '0');
-  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+const ISO_MONTH = /^(\d{4})-(\d{2})$/;
+
+const monthSchema = z.object({
+  month: z
+    .string({ error: 'Query parameter "month" is required (format YYYY-MM)' })
+    .regex(ISO_MONTH, 'Month must be in YYYY-MM format'),
+});
+
+/** Parses `?month=YYYY-MM` for the calendar endpoint, or throws a ValidationError (400). */
+export function parseCalendarQuery(raw: unknown): CalendarQuery {
+  const parsed = monthSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query');
+  }
+  const [, y, m] = ISO_MONTH.exec(parsed.data.month)!;
+  const year = Number(y);
+  const month = Number(m);
+  if (year < 1) throw new ValidationError('Year must be between 0001 and 9999');
+  if (month < 1 || month > 12) throw new ValidationError('Month must be between 01 and 12');
+  return { year, month };
 }

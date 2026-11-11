@@ -6,19 +6,22 @@ import {
   UpstreamTimeoutError,
   UpstreamUnavailableError,
 } from '../lib/errors.js';
-import { toIsoDate } from '../validation/dateQuery.js';
-import type { ConvertQuery, HebrewDateDto } from '../types/dto.js';
+import { dayOfWeek, isoDatesOfMonth, toIsoDate } from '../lib/dates.js';
+import type {
+  CalendarQuery,
+  ConvertQuery,
+  HebrewDateDto,
+  HebrewPart,
+  MonthCalendarDto,
+} from '../types/dto.js';
 
 /**
- * The shape we expect from Hebcal's converter endpoint. Only the fields we use
- * are listed; anything else Hebcal adds is ignored. If a field we rely on is
- * missing or has the wrong type, we fail loudly instead of returning garbage.
+ * The Hebrew-date fields Hebcal returns, both for a single date and for each
+ * day of a range. Only the fields we use are listed; anything else Hebcal adds
+ * is ignored. If a field we rely on is missing or has the wrong type, we fail
+ * loudly instead of returning garbage.
  */
-const hebcalResponseSchema = z.object({
-  gy: z.number().int(),
-  gm: z.number().int(),
-  gd: z.number().int(),
-  afterSunset: z.boolean().optional(),
+const hebrewDaySchema = z.object({
   hy: z.number().int(),
   hm: z.string().min(1),
   hd: z.number().int(),
@@ -27,7 +30,22 @@ const hebcalResponseSchema = z.object({
   events: z.array(z.string()).optional(),
 });
 
-type HebcalResponse = z.infer<typeof hebcalResponseSchema>;
+/** Single date: `?gy=..&gm=..&gd=..&g2h=1` */
+const singleDateSchema = hebrewDaySchema.extend({
+  gy: z.number().int(),
+  gm: z.number().int(),
+  gd: z.number().int(),
+  afterSunset: z.boolean().optional(),
+});
+
+/** Date range: `?start=YYYY-MM-DD&end=YYYY-MM-DD&g2h=1` -> { hdates: { "YYYY-MM-DD": {...} } } */
+const rangeSchema = z.object({
+  start: z.string(),
+  end: z.string(),
+  hdates: z.record(z.string(), hebrewDaySchema),
+});
+
+type HebrewDay = z.infer<typeof hebrewDaySchema>;
 
 export interface HebcalClientOptions {
   baseUrl: string;
@@ -42,20 +60,20 @@ export interface HebcalClientOptions {
 }
 
 export interface HebcalClient {
+  /** One Gregorian date -> Hebrew date. */
   convert(query: ConvertQuery): Promise<HebrewDateDto>;
+  /** A whole Gregorian month in a single Hebcal call (range mode). */
+  convertMonth(query: CalendarQuery): Promise<MonthCalendarDto>;
 }
 
 export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
   const { baseUrl, timeoutMs, retries, logger, fetchFn = fetch, retryDelayMs = 200 } = options;
 
-  function buildUrl(q: ConvertQuery): string {
+  function buildUrl(params: Record<string, string>): string {
     const url = new URL(baseUrl);
     url.searchParams.set('cfg', 'json');
     url.searchParams.set('g2h', '1');
-    url.searchParams.set('gy', String(q.year));
-    url.searchParams.set('gm', String(q.month));
-    url.searchParams.set('gd', String(q.day));
-    if (q.afterSunset) url.searchParams.set('gs', 'on');
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     return url.toString();
   }
 
@@ -119,44 +137,89 @@ export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
     return err instanceof UpstreamUnavailableError;
   }
 
-  function toDto(q: ConvertQuery, r: HebcalResponse): HebrewDateDto {
+  /**
+   * Calls Hebcal (with retry on transient failures) and validates the body
+   * against the given schema. Shared by the single-date and the range calls.
+   */
+  async function fetchValidated<T>(url: string, schema: z.ZodType<T>): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      try {
+        const body = await requestOnce(url);
+        const parsed = schema.safeParse(body);
+        if (!parsed.success) {
+          logger.error({ url, issues: parsed.error.issues }, 'unexpected hebcal payload');
+          throw new UpstreamBadResponseError('Hebcal returned an unexpected payload');
+        }
+        return parsed.data;
+      } catch (err) {
+        if (attempt < retries && isRetryable(err)) {
+          attempt++;
+          logger.warn({ url, attempt, err: (err as AppError).message }, 'retrying hebcal');
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /** Hebcal's short field names -> our readable contract. */
+  function toHebrewPart(r: HebrewDay): HebrewPart {
     return {
-      gregorian: { date: toIsoDate(q), afterSunset: r.afterSunset ?? q.afterSunset },
-      hebrew: {
-        year: r.hy,
-        month: r.hm,
-        day: r.hd,
-        hebrewText: r.hebrew,
-        parts: { day: r.heDateParts.d, month: r.heDateParts.m, year: r.heDateParts.y },
-      },
-      events: r.events ?? [],
+      year: r.hy,
+      month: r.hm,
+      day: r.hd,
+      hebrewText: r.hebrew,
+      parts: { day: r.heDateParts.d, month: r.heDateParts.m, year: r.heDateParts.y },
     };
   }
 
   return {
     async convert(q) {
-      const url = buildUrl(q);
-      let attempt = 0;
+      const url = buildUrl({
+        gy: String(q.year),
+        gm: String(q.month),
+        gd: String(q.day),
+        ...(q.afterSunset ? { gs: 'on' } : {}),
+      });
+      const r = await fetchValidated(url, singleDateSchema);
+      return {
+        gregorian: { date: toIsoDate(q), afterSunset: r.afterSunset ?? q.afterSunset },
+        hebrew: toHebrewPart(r),
+        events: r.events ?? [],
+      };
+    },
 
-      while (true) {
-        try {
-          const body = await requestOnce(url);
-          const parsed = hebcalResponseSchema.safeParse(body);
-          if (!parsed.success) {
-            logger.error({ url, issues: parsed.error.issues }, 'unexpected hebcal payload');
-            throw new UpstreamBadResponseError('Hebcal returned an unexpected payload');
-          }
-          return toDto(q, parsed.data);
-        } catch (err) {
-          if (attempt < retries && isRetryable(err)) {
-            attempt++;
-            logger.warn({ url, attempt, err: (err as AppError).message }, 'retrying hebcal');
-            await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
-            continue;
-          }
-          throw err;
-        }
+    async convertMonth({ year, month }) {
+      const dates = isoDatesOfMonth(year, month);
+      const start = dates[0]!;
+      const end = dates[dates.length - 1]!;
+      const r = await fetchValidated(buildUrl({ start, end }), rangeSchema);
+
+      // Hebcal caps a range at 180 days and silently truncates anything longer
+      // (verified with curl). A month is far below the cap, but we still verify
+      // every requested day came back instead of rendering a calendar with holes.
+      const missing = dates.filter((d) => !(d in r.hdates));
+      if (missing.length > 0) {
+        logger.error({ start, end, missing }, 'hebcal range response is incomplete');
+        throw new UpstreamBadResponseError(
+          `Hebcal returned ${dates.length - missing.length} of ${dates.length} days for ${start}..${end}`,
+        );
       }
+
+      return {
+        month: toIsoDate({ year, month, day: 1 }).slice(0, 7),
+        days: dates.map((date, i) => {
+          const day = r.hdates[date]!;
+          return {
+            date,
+            weekday: dayOfWeek(year, month, i + 1),
+            hebrew: toHebrewPart(day),
+            events: day.events ?? [],
+          };
+        }),
+      };
     },
   };
 }

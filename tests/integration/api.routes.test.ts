@@ -4,8 +4,14 @@ import { createApp } from '../../src/app.js';
 import { TtlCache } from '../../src/lib/cache.js';
 import { ConverterService } from '../../src/services/converterService.js';
 import { createHebcalClient } from '../../src/services/hebcalClient.js';
-import type { HebrewDateDto } from '../../src/types/dto.js';
-import { hangingFetch, hebcalKislev1, jsonResponse, silentLogger } from '../helpers.js';
+import type { HebrewDateDto, MonthCalendarDto } from '../../src/types/dto.js';
+import {
+  hangingFetch,
+  hebcalKislev1,
+  hebcalRange,
+  jsonResponse,
+  silentLogger,
+} from '../helpers.js';
 
 /**
  * Full stack (route -> validation -> service -> cache -> Hebcal client ->
@@ -21,7 +27,10 @@ function buildApp(fetchFn: typeof fetch, timeoutMs = 1_000) {
   });
   const service = new ConverterService(
     client,
-    new TtlCache<HebrewDateDto>(60_000, 100),
+    {
+      dates: new TtlCache<HebrewDateDto>(60_000, 100),
+      months: new TtlCache<MonthCalendarDto>(60_000, 100),
+    },
     silentLogger,
   );
   return createApp({ converterService: service, logger: silentLogger });
@@ -89,6 +98,44 @@ describe('GET /api/convert', () => {
       .set('X-Request-Id', 'trace-123');
     expect(res.headers['x-request-id']).toBe('trace-123');
     expect(res.body.error.requestId).toBe('trace-123');
+  });
+});
+
+describe('GET /api/calendar', () => {
+  it('returns every day of the month with its Hebrew date', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalRange(2026, 11)));
+    const res = await request(buildApp(fetchFn)).get('/api/calendar?month=2026-11');
+    expect(res.status).toBe(200);
+    expect(res.body.month).toBe('2026-11');
+    expect(res.body.days).toHaveLength(30);
+    expect(res.body.days[10]).toMatchObject({ date: '2026-11-11', weekday: 3 });
+    expect(res.body.cached).toBe(false);
+  });
+
+  it('caches the month', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalRange(2026, 11)));
+    const app = buildApp(fetchFn);
+    await request(app).get('/api/calendar?month=2026-11');
+    const second = await request(app).get('/api/calendar?month=2026-11');
+    expect(second.body.cached).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 400 for an invalid month without calling Hebcal', async () => {
+    const fetchFn = vi.fn<typeof fetch>();
+    const res = await request(buildApp(fetchFn)).get('/api/calendar?month=2026-13');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_DATE');
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('returns 502 when Hebcal returns an incomplete range', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      jsonResponse(hebcalRange(2026, 11, { omit: ['2026-11-30'] })),
+    );
+    const res = await request(buildApp(fetchFn)).get('/api/calendar?month=2026-11');
+    expect(res.status).toBe(502);
+    expect(res.body.error.code).toBe('UPSTREAM_BAD_RESPONSE');
   });
 });
 

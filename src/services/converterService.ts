@@ -1,7 +1,14 @@
 import type { TtlCache } from '../lib/cache.js';
 import type { Logger } from '../lib/logger.js';
-import { toIsoDate } from '../validation/dateQuery.js';
-import type { ConvertQuery, ConvertResponse, HebrewDateDto } from '../types/dto.js';
+import { toIsoDate } from '../lib/dates.js';
+import type {
+  CalendarQuery,
+  CalendarResponse,
+  ConvertQuery,
+  ConvertResponse,
+  HebrewDateDto,
+  MonthCalendarDto,
+} from '../types/dto.js';
 import type { HebcalClient } from './hebcalClient.js';
 
 /**
@@ -12,17 +19,22 @@ import type { HebcalClient } from './hebcalClient.js';
  * itself sends `Cache-Control: max-age=31536000` (one year). Errors are never
  * cached, so a temporary outage does not stick.
  */
+export interface ConverterCaches {
+  dates: TtlCache<HebrewDateDto>;
+  months: TtlCache<MonthCalendarDto>;
+}
+
 export class ConverterService {
   constructor(
     private readonly client: HebcalClient,
-    private readonly cache: TtlCache<HebrewDateDto>,
+    private readonly caches: ConverterCaches,
     private readonly logger: Logger,
   ) {}
 
   async convert(query: ConvertQuery): Promise<ConvertResponse> {
     const key = `${toIsoDate(query)}|${query.afterSunset ? 'after' : 'before'}`;
 
-    const hit = this.cache.get(key);
+    const hit = this.caches.dates.get(key);
     if (hit) {
       this.logger.debug({ key }, 'cache hit');
       return { ...hit, source: 'hebcal', cached: true };
@@ -30,7 +42,23 @@ export class ConverterService {
 
     this.logger.debug({ key }, 'cache miss');
     const dto = await this.client.convert(query);
-    this.cache.set(key, dto);
+    this.caches.dates.set(key, dto);
     return { ...dto, source: 'hebcal', cached: false };
+  }
+
+  /** A whole month for the calendar view: one Hebcal range call, cached per month. */
+  async getMonth(query: CalendarQuery): Promise<CalendarResponse> {
+    const key = toIsoDate({ ...query, day: 1 }).slice(0, 7);
+
+    const hit = this.caches.months.get(key);
+    if (hit) {
+      this.logger.debug({ key }, 'month cache hit');
+      return { ...hit, source: 'hebcal', cached: true };
+    }
+
+    this.logger.debug({ key }, 'month cache miss');
+    const month = await this.client.convertMonth(query);
+    this.caches.months.set(key, month);
+    return { ...month, source: 'hebcal', cached: false };
   }
 }

@@ -35,3 +35,27 @@ export function hangingFetch() {
       }),
   );
 }
+
+/** A Hebcal range response (`?start=..&end=..`) for a whole month, shaped like the real one. */
+export function hebcalRange(year: number, month: number, opts: { omit?: string[] } = {}) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const hdates: Record<string, unknown> = {};
+  for (let d = 1; d <= days; d++) {
+    const date = `${year}-${pad(month)}-${pad(d)}`;
+    if (opts.omit?.includes(date)) continue;
+    hdates[date] = {
+      hy: 5787,
+      hm: 'Cheshvan',
+      hd: d,
+      hebrew: `${d} בְּחֶשְׁוָן תשפ״ז`,
+      heDateParts: { y: 'תשפ״ז', m: 'חשון', d: String(d) },
+      events: d === 11 ? ['Rosh Chodesh Kislev'] : [],
+    };
+  }
+  return {
+    start: `${year}-${pad(month)}-01`,
+    end: `${year}-${pad(month)}-${pad(days)}`,
+    hdates,
+  };
+}

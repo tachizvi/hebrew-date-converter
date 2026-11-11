@@ -4,15 +4,21 @@ import { TtlCache } from './lib/cache.js';
 import { createLogger } from './lib/logger.js';
 import { ConverterService } from './services/converterService.js';
 import { createHebcalClient } from './services/hebcalClient.js';
-import type { HebrewDateDto } from './types/dto.js';
+import type { HebrewDateDto, MonthCalendarDto } from './types/dto.js';
 
 /** Composition root: the only place that reads config and wires real dependencies. */
 const config = loadConfig();
 const logger = createLogger(config.logLevel);
 
 const hebcalClient = createHebcalClient({ ...config.hebcal, logger });
-const cache = new TtlCache<HebrewDateDto>(config.cache.ttlMs, config.cache.maxEntries);
-const converterService = new ConverterService(hebcalClient, cache, logger);
+const converterService = new ConverterService(
+  hebcalClient,
+  {
+    dates: new TtlCache<HebrewDateDto>(config.cache.ttlMs, config.cache.maxEntries),
+    months: new TtlCache<MonthCalendarDto>(config.cache.ttlMs, config.cache.maxEntries),
+  },
+  logger,
+);
 
 const app = createApp({ converterService, logger });
 

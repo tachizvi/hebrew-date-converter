@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ValidationError } from '../../src/lib/errors.js';
-import {
-  isRealCalendarDate,
-  parseConvertQuery,
-  toIsoDate,
-} from '../../src/validation/dateQuery.js';
+import { parseCalendarQuery, parseConvertQuery } from '../../src/validation/dateQuery.js';
 
 describe('parseConvertQuery', () => {
   it('parses a valid date', () => {
@@ -38,17 +34,20 @@ describe('parseConvertQuery', () => {
   });
 });
 
-describe('isRealCalendarDate', () => {
-  it('handles leap years', () => {
-    expect(isRealCalendarDate(2024, 2, 29)).toBe(true);
-    expect(isRealCalendarDate(2023, 2, 29)).toBe(false);
-    expect(isRealCalendarDate(1900, 2, 29)).toBe(false); // divisible by 100, not by 400
-    expect(isRealCalendarDate(2000, 2, 29)).toBe(true); // divisible by 400
+describe('parseCalendarQuery', () => {
+  it('parses a valid month', () => {
+    expect(parseCalendarQuery({ month: '2026-11' })).toEqual({ year: 2026, month: 11 });
   });
-});
 
-describe('toIsoDate', () => {
-  it('zero-pads', () => {
-    expect(toIsoDate({ year: 33, month: 1, day: 5 })).toBe('0033-01-05');
+  it.each([
+    [{}, /required/],
+    [{ month: '2026-11-01' }, /YYYY-MM/],
+    [{ month: '2026-1' }, /YYYY-MM/],
+    [{ month: '2026-13' }, /between 01 and 12/],
+    [{ month: '2026-00' }, /between 01 and 12/],
+    [{ month: '0000-05' }, /Year/],
+  ])('rejects %j', (input, message) => {
+    expect(() => parseCalendarQuery(input)).toThrow(ValidationError);
+    expect(() => parseCalendarQuery(input)).toThrow(message);
   });
 });
