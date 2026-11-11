@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { ValidationError } from '../lib/errors.js';
+import { InvalidRequestError, ValidationError } from '../lib/errors.js';
 import { isRealCalendarDate, toIsoDate } from '../lib/dates.js';
 import { HEBREW_MONTH_CODES, isHebrewLeapYear } from '../lib/hebrewCalendar.js';
-import type { CalendarQuery, ConvertQuery, HebrewDateQuery } from '../types/dto.js';
+import type { CalendarQuery, ConvertQuery, HebrewDateQuery, Lang } from '../types/dto.js';
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -160,4 +160,18 @@ export function parseAddWorkdaysQuery(raw: unknown): { date: string; days: numbe
     throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid "days"');
   }
   return { date, days: parsed.data };
+}
+
+const langSchema = z
+  .enum(['en', 'he'], { error: '"lang" must be "en" or "he"' })
+  .optional()
+  .default('en');
+
+/** Optional `lang=en|he` (query string or body); defaults to English. */
+export function parseLang(raw: unknown): Lang {
+  const parsed = langSchema.safeParse((raw as Record<string, unknown> | undefined)?.lang);
+  if (!parsed.success) {
+    throw new InvalidRequestError(parsed.error.issues[0]?.message ?? 'Invalid lang');
+  }
+  return parsed.data;
 }

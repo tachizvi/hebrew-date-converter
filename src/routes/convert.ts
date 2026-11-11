@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { ConverterService } from '../services/converterService.js';
-import { parseConvertQuery, parseHebrewDateQuery } from '../validation/dateQuery.js';
+import { parseConvertQuery, parseHebrewDateQuery, parseLang } from '../validation/dateQuery.js';
 
 /**
  * GET /api/convert?date=YYYY-MM-DD[&afterSunset=true]
@@ -14,7 +14,7 @@ export function convertRouter(service: ConverterService): Router {
 
   router.get('/convert', async (req, res) => {
     const query = parseConvertQuery(req.query);
-    const result = await service.convert(query);
+    const result = await service.convert(query, parseLang(req.query));
     req.log.info(
       { date: result.gregorian.date, afterSunset: query.afterSunset, cached: result.cached },
       'converted date',
@@ -25,7 +25,7 @@ export function convertRouter(service: ConverterService): Router {
   /** GET /api/convert-hebrew?year=5787&month=Kislev&day=1 - the reverse direction. */
   router.get('/convert-hebrew', async (req, res) => {
     const query = parseHebrewDateQuery(req.query);
-    const result = await service.convertFromHebrew(query);
+    const result = await service.convertFromHebrew(query, parseLang(req.query));
     req.log.info(
       {
         hebrew: `${query.day} ${query.month} ${query.year}`,

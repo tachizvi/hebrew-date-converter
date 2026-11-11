@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { ConverterService } from '../services/converterService.js';
-import { parseCalendarQuery } from '../validation/dateQuery.js';
+import { parseCalendarQuery, parseLang } from '../validation/dateQuery.js';
 
 /**
  * GET /api/calendar?month=YYYY-MM
@@ -13,7 +13,7 @@ export function calendarRouter(service: ConverterService): Router {
 
   router.get('/calendar', async (req, res) => {
     const query = parseCalendarQuery(req.query);
-    const result = await service.getMonth(query);
+    const result = await service.getMonth(query, parseLang(req.query));
     req.log.info({ month: result.month, cached: result.cached }, 'built month calendar');
     res.json(result);
   });

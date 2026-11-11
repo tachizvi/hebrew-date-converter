@@ -4,6 +4,7 @@ import { mapWithConcurrency } from '../lib/concurrency.js';
 import { AppError, InvalidRequestError } from '../lib/errors.js';
 import type { ConverterService } from '../services/converterService.js';
 import type { BatchItemResult, BatchResponse, ConvertResponse } from '../types/dto.js';
+import type { Lang } from '../types/dto.js';
 import { parseConvertQuery } from '../validation/dateQuery.js';
 
 export const MAX_BATCH_SIZE = 100;
@@ -15,10 +16,11 @@ const bodySchema = z.object({
     .array(z.string(), { error: 'Body must be {"dates": ["YYYY-MM-DD", ...]}' })
     .min(1, '"dates" must contain at least one date')
     .max(MAX_BATCH_SIZE, `"dates" can contain at most ${MAX_BATCH_SIZE} dates`),
+  lang: z.enum(['en', 'he'], { error: '"lang" must be "en" or "he"' }).optional().default('en'),
 });
 
 /**
- * POST /api/convert/batch   body: {"dates": ["2026-11-11", "2026-02-30", ...]}
+ * POST /api/convert/batch   body: {"dates": ["2026-11-11", "2026-02-30", ...], "lang": "en"}
  *
  * Converts many Gregorian dates in one request - the typical system-to-system
  * case (e.g. an HR system converting employee birthdays).
@@ -42,7 +44,7 @@ export function batchRouter(service: ConverterService): Router {
     const unique = [...new Set(inputs)];
     const outcomes = new Map<string, BatchItemResult>();
     await mapWithConcurrency(unique, BATCH_CONCURRENCY, async (input) => {
-      outcomes.set(input, await convertOne(service, input));
+      outcomes.set(input, await convertOne(service, input, parsed.data.lang));
     });
 
     const results = inputs.map((input) => ({ ...outcomes.get(input)!, input }));
@@ -63,9 +65,13 @@ export function batchRouter(service: ConverterService): Router {
   return router;
 }
 
-async function convertOne(service: ConverterService, input: string): Promise<BatchItemResult> {
+async function convertOne(
+  service: ConverterService,
+  input: string,
+  lang: Lang,
+): Promise<BatchItemResult> {
   try {
-    const result: ConvertResponse = await service.convert(parseConvertQuery({ date: input }));
+    const result: ConvertResponse = await service.convert(parseConvertQuery({ date: input }), lang);
     return { input, ok: true, result };
   } catch (err) {
     if (err instanceof AppError) {

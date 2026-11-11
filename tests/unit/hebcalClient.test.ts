@@ -240,3 +240,18 @@ describe('hebcalClient.convertFromHebrew (h2g)', () => {
     );
   });
 });
+
+describe('hebcalClient language', () => {
+  it('asks Hebcal for Hebrew event names with lg=he, in every mode', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async (input) =>
+      jsonResponse(String(input).includes('start=') ? hebcalRange(2026, 11) : hebcalKislev1),
+    );
+    const c = client(fetchFn);
+    await c.convert(query, 'he');
+    await c.convertFromHebrew({ year: 5787, month: 'Kislev', day: 1 }, 'he');
+    await c.convertMonth({ year: 2026, month: 11 }, 'he');
+    await c.convert(query); // default: English, no lg parameter
+    const lg = fetchFn.mock.calls.map((call) => new URL(String(call[0])).searchParams.get('lg'));
+    expect(lg).toEqual(['he', 'he', 'he', null]);
+  });
+});

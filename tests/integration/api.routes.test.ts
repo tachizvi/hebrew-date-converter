@@ -329,6 +329,38 @@ describe('POST /api/convert/batch', () => {
   });
 });
 
+describe('lang parameter', () => {
+  it('passes lang=he to Hebcal and caches each language separately', async () => {
+    const fetchFn = fakeHebcal();
+    const app = buildApp(fetchFn);
+    await request(app).get('/api/convert?date=2026-11-11&lang=he');
+    const en = await request(app).get('/api/convert?date=2026-11-11');
+    const heAgain = await request(app).get('/api/convert?date=2026-11-11&lang=he');
+    expect(en.body.cached).toBe(false);
+    expect(heAgain.body.cached).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(new URL(String(fetchFn.mock.calls[0]![0])).searchParams.get('lg')).toBe('he');
+  });
+
+  it('accepts lang in the batch body', async () => {
+    const fetchFn = fakeHebcal();
+    const res = await request(buildApp(fetchFn))
+      .post('/api/convert/batch')
+      .send({ dates: ['2026-11-11'], lang: 'he' });
+    expect(res.status).toBe(200);
+    expect(new URL(String(fetchFn.mock.calls[0]![0])).searchParams.get('lg')).toBe('he');
+  });
+
+  it.each(['/api/convert?date=2026-11-11&lang=fr', '/api/calendar?month=2026-11&lang=xx'])(
+    '%s -> 400 INVALID_REQUEST',
+    async (path) => {
+      const res = await request(buildApp(fakeHebcal())).get(path);
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_REQUEST');
+    },
+  );
+});
+
 describe('other routes', () => {
   it('GET /api/health is ok', async () => {
     const res = await request(buildApp(vi.fn())).get('/api/health');

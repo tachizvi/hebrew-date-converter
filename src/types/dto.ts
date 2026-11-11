@@ -56,6 +56,12 @@ export interface ConvertResponse extends HebrewDateDto {
   cached: boolean;
 }
 
+/**
+ * Language for names Hebcal translates (holidays, Torah portions, Rosh Chodesh).
+ * The Hebrew date itself (`hebrewText`, `parts`) is always in Hebrew.
+ */
+export type Lang = 'en' | 'he';
+
 /** Validated input for a Hebrew -> Gregorian conversion. */
 export interface HebrewDateQuery {
   year: number;

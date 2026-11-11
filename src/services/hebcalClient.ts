@@ -9,6 +9,7 @@ import type {
   HebrewDateDto,
   HebrewDateQuery,
   HebrewPart,
+  Lang,
   MonthCalendarDto,
 } from '../types/dto.js';
 
@@ -51,21 +52,27 @@ export interface HebcalClientOptions extends HebcalHttpOptions {
 
 export interface HebcalClient {
   /** One Gregorian date -> Hebrew date. */
-  convert(query: ConvertQuery): Promise<HebrewDateDto>;
+  convert(query: ConvertQuery, lang?: Lang): Promise<HebrewDateDto>;
   /** One Hebrew date -> Gregorian date (`h2g=1`). */
-  convertFromHebrew(query: HebrewDateQuery): Promise<HebrewDateDto>;
+  convertFromHebrew(query: HebrewDateQuery, lang?: Lang): Promise<HebrewDateDto>;
   /** A whole Gregorian month in a single Hebcal call (range mode). */
-  convertMonth(query: CalendarQuery): Promise<MonthCalendarDto>;
+  convertMonth(query: CalendarQuery, lang?: Lang): Promise<MonthCalendarDto>;
 }
 
 export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
   const { baseUrl, logger } = options;
   const { fetchValidated } = createHebcalHttp(options);
 
-  function buildUrl(params: Record<string, string>, direction: 'g2h' | 'h2g' = 'g2h'): string {
+  function buildUrl(
+    params: Record<string, string>,
+    direction: 'g2h' | 'h2g' = 'g2h',
+    lang: Lang = 'en',
+  ): string {
     const url = new URL(baseUrl);
     url.searchParams.set('cfg', 'json');
     url.searchParams.set(direction, '1');
+    // Hebcal translates event names with lg=he; English is its default.
+    if (lang === 'he') url.searchParams.set('lg', 'he');
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     return url.toString();
   }
@@ -82,13 +89,17 @@ export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
   }
 
   return {
-    async convert(q) {
-      const url = buildUrl({
-        gy: String(q.year),
-        gm: String(q.month),
-        gd: String(q.day),
-        ...(q.afterSunset ? { gs: 'on' } : {}),
-      });
+    async convert(q, lang = 'en') {
+      const url = buildUrl(
+        {
+          gy: String(q.year),
+          gm: String(q.month),
+          gd: String(q.day),
+          ...(q.afterSunset ? { gs: 'on' } : {}),
+        },
+        'g2h',
+        lang,
+      );
       const r = await fetchValidated(url, singleDateSchema);
       return {
         gregorian: { date: toIsoDate(q), afterSunset: r.afterSunset ?? q.afterSunset },
@@ -97,8 +108,8 @@ export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
       };
     },
 
-    async convertFromHebrew(q) {
-      const url = buildUrl({ hy: String(q.year), hm: q.month, hd: String(q.day) }, 'h2g');
+    async convertFromHebrew(q, lang = 'en') {
+      const url = buildUrl({ hy: String(q.year), hm: q.month, hd: String(q.day) }, 'h2g', lang);
 
       let r: z.infer<typeof singleDateSchema>;
       try {
@@ -137,11 +148,11 @@ export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
       };
     },
 
-    async convertMonth({ year, month }) {
+    async convertMonth({ year, month }, lang = 'en') {
       const dates = isoDatesOfMonth(year, month);
       const start = dates[0]!;
       const end = dates[dates.length - 1]!;
-      const r = await fetchValidated(buildUrl({ start, end }), rangeSchema);
+      const r = await fetchValidated(buildUrl({ start, end }, 'g2h', lang), rangeSchema);
 
       // Hebcal caps a range at 180 days and silently truncates anything longer
       // (verified with curl). A month is far below the cap, but we still verify

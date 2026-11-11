@@ -8,6 +8,7 @@ import type {
   ConvertResponse,
   HebrewDateDto,
   HebrewDateQuery,
+  Lang,
   MonthCalendarDto,
 } from '../types/dto.js';
 import type { HebcalClient } from './hebcalClient.js';
@@ -32,8 +33,8 @@ export class ConverterService {
     private readonly logger: Logger,
   ) {}
 
-  async convert(query: ConvertQuery): Promise<ConvertResponse> {
-    const key = `${toIsoDate(query)}|${query.afterSunset ? 'after' : 'before'}`;
+  async convert(query: ConvertQuery, lang: Lang = 'en'): Promise<ConvertResponse> {
+    const key = `${toIsoDate(query)}|${query.afterSunset ? 'after' : 'before'}|${lang}`;
 
     const hit = this.caches.dates.get(key);
     if (hit) {
@@ -42,14 +43,14 @@ export class ConverterService {
     }
 
     this.logger.debug({ key }, 'cache miss');
-    const dto = await this.client.convert(query);
+    const dto = await this.client.convert(query, lang);
     this.caches.dates.set(key, dto);
     return { ...dto, source: 'hebcal', cached: false };
   }
 
   /** Hebrew -> Gregorian, cached in the same date cache under its own key prefix. */
-  async convertFromHebrew(query: HebrewDateQuery): Promise<ConvertResponse> {
-    const key = `h2g|${query.year}-${query.month}-${query.day}`;
+  async convertFromHebrew(query: HebrewDateQuery, lang: Lang = 'en'): Promise<ConvertResponse> {
+    const key = `h2g|${query.year}-${query.month}-${query.day}|${lang}`;
 
     const hit = this.caches.dates.get(key);
     if (hit) {
@@ -58,14 +59,14 @@ export class ConverterService {
     }
 
     this.logger.debug({ key }, 'cache miss');
-    const dto = await this.client.convertFromHebrew(query);
+    const dto = await this.client.convertFromHebrew(query, lang);
     this.caches.dates.set(key, dto);
     return { ...dto, source: 'hebcal', cached: false };
   }
 
   /** A whole month for the calendar view: one Hebcal range call, cached per month. */
-  async getMonth(query: CalendarQuery): Promise<CalendarResponse> {
-    const key = toIsoDate({ ...query, day: 1 }).slice(0, 7);
+  async getMonth(query: CalendarQuery, lang: Lang = 'en'): Promise<CalendarResponse> {
+    const key = `${toIsoDate({ ...query, day: 1 }).slice(0, 7)}|${lang}`;
 
     const hit = this.caches.months.get(key);
     if (hit) {
@@ -74,7 +75,7 @@ export class ConverterService {
     }
 
     this.logger.debug({ key }, 'month cache miss');
-    const month = await this.client.convertMonth(query);
+    const month = await this.client.convertMonth(query, lang);
     this.caches.months.set(key, month);
     return { ...month, source: 'hebcal', cached: false };
   }
