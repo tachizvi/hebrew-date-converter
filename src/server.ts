@@ -31,7 +31,20 @@ const workdayService = new WorkdayService(
 
 const app = createApp({ converterService, workdayService, logger });
 
-const server = app.listen(config.port, () => {
+// Express 5 passes listen errors (e.g. EADDRINUSE) to this callback instead of
+// throwing, so the error must be checked here - otherwise we'd log "listening"
+// while another process owns the port.
+const server = app.listen(config.port, (err?: Error) => {
+  if (err) {
+    const inUse = (err as NodeJS.ErrnoException).code === 'EADDRINUSE';
+    logger.fatal(
+      { err, port: config.port },
+      inUse
+        ? `port ${config.port} is already in use - stop the other process or set PORT (e.g. PORT=3001)`
+        : 'could not start the server',
+    );
+    process.exit(1);
+  }
   logger.info(
     { port: config.port, hebcal: config.hebcal.baseUrl },
     `listening on http://localhost:${config.port}`,
