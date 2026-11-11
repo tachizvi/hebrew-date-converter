@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hebrew Date Converter</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <header>
+        <h1>Hebrew Date Converter</h1>
+        <p class="subtitle">Convert a Gregorian date to the Hebrew calendar.</p>
+      </header>
+
+      <form id="convert-form" novalidate>
+        <div class="field">
+          <label for="date">Gregorian date</label>
+          <input id="date" name="date" type="date" required />
+        </div>
+
+        <label class="checkbox">
+          <input id="afterSunset" name="afterSunset" type="checkbox" />
+          After sunset <span class="hint">(the Hebrew day starts at nightfall)</span>
+        </label>
+
+        <button id="submit" type="submit">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="label">Convert</span>
+        </button>
+      </form>
+
+      <section id="result" class="result" aria-live="polite" hidden>
+        <p id="hebrew-text" class="hebrew" dir="rtl" lang="he"></p>
+        <p id="transliteration" class="transliteration"></p>
+        <div class="events-block">
+          <h2>Events</h2>
+          <ul id="events" class="events"></ul>
+        </div>
+        <p id="meta" class="meta"></p>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <footer>
+        Data from the
+        <a
+          href="https://www.hebcal.com/home/219/hebrew-date-converter-rest-api"
+          target="_blank"
+          rel="noopener"
+          >Hebcal REST API</a
+        >
+        via this service's <code>GET /api/convert</code>.
+      </footer>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
