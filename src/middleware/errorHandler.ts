@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { AppError } from '../lib/errors.js';
+import { AppError, InvalidRequestError } from '../lib/errors.js';
 
 /** Unknown /api routes get a JSON 404 rather than Express's HTML page. */
 export const notFoundHandler: RequestHandler = (req, res) => {
@@ -19,6 +19,12 @@ export const notFoundHandler: RequestHandler = (req, res) => {
  *   stack are logged, never sent to the client.
  */
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+  // Errors thrown by express.json() while reading the body.
+  if (err?.type === 'entity.parse.failed') err = new InvalidRequestError('Body is not valid JSON');
+  if (err?.type === 'entity.too.large') {
+    err = new AppError(413, 'PAYLOAD_TOO_LARGE', 'Request body is too large');
+  }
+
   if (err instanceof AppError) {
     // Client mistakes (4xx) are expected: a short warning is enough.
     // Upstream/server failures (5xx) get the full error, including its cause.

@@ -5,15 +5,19 @@ import express, { type Express } from 'express';
 import { pinoHttp } from 'pino-http';
 import type { Logger } from './lib/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { batchRouter } from './routes/batch.js';
 import { calendarRouter } from './routes/calendar.js';
 import { convertRouter } from './routes/convert.js';
 import { healthRouter } from './routes/health.js';
+import { workdayRouter } from './routes/workday.js';
 import type { ConverterService } from './services/converterService.js';
+import type { WorkdayService } from './services/workdayService.js';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 export interface AppDeps {
   converterService: ConverterService;
+  workdayService: WorkdayService;
   logger: Logger;
 }
 
@@ -22,7 +26,7 @@ export interface AppDeps {
  * touches the network, so tests can create an app with fakes and call it
  * directly with Supertest.
  */
-export function createApp({ converterService, logger }: AppDeps): Express {
+export function createApp({ converterService, workdayService, logger }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
 
@@ -43,7 +47,9 @@ export function createApp({ converterService, logger }: AppDeps): Express {
 
   app.use('/api', healthRouter());
   app.use('/api', convertRouter(converterService));
+  app.use('/api', batchRouter(converterService));
   app.use('/api', calendarRouter(converterService));
+  app.use('/api', workdayRouter(workdayService));
   app.use('/api', notFoundHandler);
 
   app.use(express.static(publicDir));

@@ -9,6 +9,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   HEBCAL_BASE_URL: z.url().default('https://www.hebcal.com/converter'),
+  HEBCAL_HOLIDAYS_URL: z.url().default('https://www.hebcal.com/hebcal'),
   HEBCAL_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   HEBCAL_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
   CACHE_TTL_MS: z.coerce
@@ -22,7 +23,7 @@ const envSchema = z.object({
 
 export type Config = {
   port: number;
-  hebcal: { baseUrl: string; timeoutMs: number; retries: number };
+  hebcal: { baseUrl: string; holidaysUrl: string; timeoutMs: number; retries: number };
   cache: { ttlMs: number; maxEntries: number };
   logLevel: z.infer<typeof envSchema>['LOG_LEVEL'];
 };
@@ -38,6 +39,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: e.PORT,
     hebcal: {
       baseUrl: e.HEBCAL_BASE_URL,
+      holidaysUrl: e.HEBCAL_HOLIDAYS_URL,
       timeoutMs: e.HEBCAL_TIMEOUT_MS,
       retries: e.HEBCAL_RETRIES,
     },

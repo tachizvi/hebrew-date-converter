@@ -77,3 +77,52 @@ export interface ConvertQuery {
   day: number;
   afterSunset: boolean;
 }
+
+/**
+ * - workday:      regular Sunday-Thursday
+ * - holiday_eve:  day before a full holiday (shortened day, still a workday)
+ * - chol_hamoed:  intermediate days of Pesach/Sukkot (workday, reduced hours common)
+ * - weekend:      Friday or Saturday
+ * - holiday:      full holiday / statutory day off (no work)
+ */
+export type DayType = 'workday' | 'holiday_eve' | 'chol_hamoed' | 'weekend' | 'holiday';
+
+export interface WorkdayDto {
+  date: string;
+  /** 0 = Sunday ... 6 = Saturday */
+  weekday: number;
+  isWorkday: boolean;
+  dayType: DayType;
+  /** Why the day is not a regular workday, e.g. "Yom Kippur"; null on regular workdays */
+  reason: string | null;
+  hebrewReason: string | null;
+}
+
+export interface WorkdayMonthDto {
+  month: string;
+  days: WorkdayDto[];
+}
+
+export interface AddWorkdaysDto {
+  from: string;
+  workdays: number;
+  /** The date reached after counting `workdays` working days after `from` */
+  result: WorkdayDto;
+  /** Non-working days that were skipped on the way */
+  skipped: WorkdayDto[];
+}
+
+export type BatchItemResult =
+  | { input: string; ok: true; result: ConvertResponse }
+  | { input: string; ok: false; error: { code: string; message: string } };
+
+export interface BatchResponse {
+  results: BatchItemResult[];
+  summary: {
+    total: number;
+    succeeded: number;
+    failed: number;
+    /** Distinct valid dates actually converted (duplicates are converted once) */
+    uniqueConverted: number;
+  };
+}

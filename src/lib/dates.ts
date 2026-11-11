@@ -48,3 +48,15 @@ export function isoDatesOfMonth(year: number, month: number): string[] {
     toIsoDate({ year, month, day: i + 1 }),
   );
 }
+
+/** ISO date plus/minus whole days, e.g. addDays('2026-12-31', 1) -> '2027-01-01'. */
+export function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
+  const date = new Date(0);
+  date.setUTCFullYear(y, m - 1, d + days);
+  return toIsoDate({
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  });
+}

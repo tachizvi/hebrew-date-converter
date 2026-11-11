@@ -4,7 +4,9 @@ import { TtlCache } from './lib/cache.js';
 import { createLogger } from './lib/logger.js';
 import { ConverterService } from './services/converterService.js';
 import { createHebcalClient } from './services/hebcalClient.js';
-import type { HebrewDateDto, MonthCalendarDto } from './types/dto.js';
+import { createHebcalHolidaysClient } from './services/hebcalHolidaysClient.js';
+import { WorkdayService } from './services/workdayService.js';
+import type { HebrewDateDto, MonthCalendarDto, WorkdayDto } from './types/dto.js';
 
 /** Composition root: the only place that reads config and wires real dependencies. */
 const config = loadConfig();
@@ -20,7 +22,14 @@ const converterService = new ConverterService(
   logger,
 );
 
-const app = createApp({ converterService, logger });
+const workdayService = new WorkdayService(
+  createHebcalHolidaysClient({ ...config.hebcal, logger }),
+  // One entry per Gregorian year; holidays don't change, so the same TTL is fine.
+  new TtlCache<Map<string, WorkdayDto>>(config.cache.ttlMs, 50),
+  logger,
+);
+
+const app = createApp({ converterService, workdayService, logger });
 
 const server = app.listen(config.port, () => {
   logger.info(

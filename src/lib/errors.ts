@@ -5,6 +5,8 @@
  */
 export type ErrorCode =
   | 'INVALID_DATE'
+  | 'INVALID_REQUEST'
+  | 'PAYLOAD_TOO_LARGE'
   | 'UPSTREAM_UNAVAILABLE'
   | 'UPSTREAM_TIMEOUT'
   | 'UPSTREAM_BAD_RESPONSE'
@@ -65,5 +67,12 @@ export class UpstreamRejectedError extends UpstreamBadResponseError {
       `Hebcal rejected the request (HTTP ${upstreamStatus})` +
         (upstreamMessage ? `: ${upstreamMessage}` : ''),
     );
+  }
+}
+
+/** The request body is malformed (bad JSON, wrong shape). */
+export class InvalidRequestError extends AppError {
+  constructor(message: string) {
+    super(400, 'INVALID_REQUEST', message);
   }
 }

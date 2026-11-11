@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ValidationError } from '../lib/errors.js';
-import { isRealCalendarDate } from '../lib/dates.js';
+import { isRealCalendarDate, toIsoDate } from '../lib/dates.js';
 import { HEBREW_MONTH_CODES, isHebrewLeapYear } from '../lib/hebrewCalendar.js';
 import type { CalendarQuery, ConvertQuery, HebrewDateQuery } from '../types/dto.js';
 
@@ -115,4 +115,49 @@ export function parseHebrewDateQuery(raw: unknown): HebrewDateQuery {
     throw new ValidationError(`${year} is not a leap year: it has only Adar`);
   }
   return { year, month, day };
+}
+
+/** Years the Israeli workday rules are offered for. */
+export const MIN_WORKDAY_YEAR = 1949;
+export const MAX_WORKDAY_YEAR = 2999;
+
+function assertWorkdayYear(year: number) {
+  if (year < MIN_WORKDAY_YEAR || year > MAX_WORKDAY_YEAR) {
+    throw new ValidationError(
+      `Workday rules are available for ${MIN_WORKDAY_YEAR}-${MAX_WORKDAY_YEAR}`,
+    );
+  }
+}
+
+/** `?date=YYYY-MM-DD` for the workday endpoint. */
+export function parseWorkdayQuery(raw: unknown): string {
+  const { year, month, day } = parseConvertQuery({
+    date: (raw as Record<string, unknown> | undefined)?.date,
+  });
+  assertWorkdayYear(year);
+  return toIsoDate({ year, month, day });
+}
+
+/** `?month=YYYY-MM` for the workday month endpoint. */
+export function parseWorkdayMonthQuery(raw: unknown): CalendarQuery {
+  const query = parseCalendarQuery(raw);
+  assertWorkdayYear(query.year);
+  return query;
+}
+
+export const MAX_ADD_WORKDAYS = 100;
+
+/** `?date=YYYY-MM-DD&days=N` for adding business days. */
+export function parseAddWorkdaysQuery(raw: unknown): { date: string; days: number } {
+  const date = parseWorkdayQuery(raw);
+  const parsed = z.coerce
+    .number({ error: 'Query parameter "days" is required' })
+    .int('"days" must be a whole number')
+    .min(1, `"days" must be between 1 and ${MAX_ADD_WORKDAYS}`)
+    .max(MAX_ADD_WORKDAYS, `"days" must be between 1 and ${MAX_ADD_WORKDAYS}`)
+    .safeParse((raw as Record<string, unknown> | undefined)?.days ?? undefined);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid "days"');
+  }
+  return { date, days: parsed.data };
 }
