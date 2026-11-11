@@ -14,7 +14,9 @@ On top of the conversion:
   month, coloured by Israeli workday status;
 - **Israeli business days**: is a date a workday (and if not, why), and what date is N business
   days from now;
-- **batch conversion** of up to 100 dates in one request, with per-item results.
+- **batch conversion** of up to 100 dates in one request, with per-item results;
+- an **English / Hebrew** interface (right-to-left in Hebrew), with holiday names in the chosen
+  language.
 
 ![screenshot](docs/screenshot.jpg)
 
@@ -129,6 +131,13 @@ Every error has the same shape, with a stable `code` the client can switch on, a
 | 504  | `UPSTREAM_TIMEOUT`      | Hebcal did not answer within `HEBCAL_TIMEOUT_MS`                                     |
 | 404  | `NOT_FOUND`             | Unknown `/api` route                                                                 |
 | 500  | `INTERNAL_ERROR`        | Unexpected bug (details logged, never sent to the client)                            |
+
+### Language
+
+`/api/convert`, `/api/convert-hebrew` and `/api/calendar` accept an optional `lang=en|he`
+(the batch endpoint takes `"lang"` in the body). With `he`, holiday and event names come back in
+Hebrew (Hebcal's `lg=he`), e.g. `"events": ["יוֹם כִּפּוּר"]`. The Hebrew date itself is always in
+Hebrew, and the language is part of every cache key. Anything else → `400 INVALID_REQUEST`.
 
 ### `GET /api/convert-hebrew`
 
@@ -311,6 +320,11 @@ clear message instead of failing later.
 - **Batch: per-item results, not all-or-nothing.** In system integrations one bad record should
   not block the other 99. Each item carries `ok` and either a result or an error with the same
   codes as the single-date API, plus a summary for monitoring.
+- **Localisation split between client and server.** UI text lives in the browser
+  (`public/i18n.js`, `data-i18n` attributes); holiday names come from Hebcal in the requested
+  language; the workday API already returns `reason` and `hebrewReason`. API error messages stay
+  English (they are for developers); the page shows a translated message per error `code`, with
+  the API's detail in brackets.
 - **Errors as types.** Each failure is a subclass of `AppError` with an HTTP status and code. One
   middleware converts them into the error JSON; unknown errors become a generic 500 and are logged
   with their stack.
@@ -330,6 +344,8 @@ npm test
 - `tests/unit/workdayService.test.ts` — every day type (including a holiday on Shabbat and
   Yom HaAtzma'ut), one Hebcal call per year, adding business days across holidays and across a
   year boundary.
+- Language: `lg=he` sent in every conversion mode, languages cached separately, invalid `lang`
+  rejected.
 - `tests/unit/concurrency.test.ts` — input order kept, never more than the limit in flight.
 - `tests/unit/hebrewDateQuery.test.ts` — Hebrew leap-year cycle, month names, Adar vs. leap
   year, year/day ranges.
@@ -395,12 +411,16 @@ GitHub Actions runs lint, type check, tests and build on every push (`.github/wo
   `setUTCFullYear` and plain arithmetic for month lengths, so the grid is correct for any year.
 - **"Today" in the right time zone.** `new Date().toISOString()` is UTC and can be a day off in
   Israel late at night; the page computes today's date from local time.
+- **Right-to-left with mixed content.** In Hebrew the page is `dir="rtl"`, but dates like
+  `2026-09-21` and transliterations like `10 Tishrei 5787` must stay left-to-right; they are
+  wrapped in `<bdi dir="ltr">`, otherwise the browser's bidi algorithm reorders them
+  ("Kislev 5787 1"). Torah-portion filtering in the calendar strips nikud before matching, since
+  Hebrew names arrive as "פָּרָשַׁת…".
 - **Hebrew in an English page.** The Hebrew date is rendered in its own `dir="rtl" lang="he"`
   element so punctuation (׳ ״) and nikud display correctly.
 
 ## Possible improvements
 
-- Hebrew event names (Hebcal supports `lg=he`) with a language switch.
 - Shared cache (Redis) when running more than one instance.
 - Rate limiting and a circuit breaker around Hebcal.
 - OpenAPI spec for the API, Dockerfile, and deployment.
