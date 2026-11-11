@@ -1,0 +1,52 @@
+/**
+ * Every expected failure is an AppError with an HTTP status and a stable,
+ * machine-readable code. The error middleware turns these into one consistent
+ * JSON error shape, so clients never have to parse free text.
+ */
+export type ErrorCode =
+  | 'INVALID_DATE'
+  | 'UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_TIMEOUT'
+  | 'UPSTREAM_BAD_RESPONSE'
+  | 'NOT_FOUND'
+  | 'INTERNAL_ERROR';
+
+export class AppError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: ErrorCode,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = new.target.name;
+  }
+}
+
+/** The client sent something we cannot convert. */
+export class ValidationError extends AppError {
+  constructor(message: string) {
+    super(400, 'INVALID_DATE', message);
+  }
+}
+
+/** Hebcal could not be reached, or answered with a server error. */
+export class UpstreamUnavailableError extends AppError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(502, 'UPSTREAM_UNAVAILABLE', message, options);
+  }
+}
+
+/** Hebcal did not answer within the configured timeout. */
+export class UpstreamTimeoutError extends AppError {
+  constructor(timeoutMs: number) {
+    super(504, 'UPSTREAM_TIMEOUT', `Hebcal did not respond within ${timeoutMs} ms`);
+  }
+}
+
+/** Hebcal answered, but not with something we understand. */
+export class UpstreamBadResponseError extends AppError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(502, 'UPSTREAM_BAD_RESPONSE', message, options);
+  }
+}
