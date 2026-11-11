@@ -434,10 +434,17 @@ footer a {
 }
 
 .workday-badge.day-holiday {
+  background: #fdecec;
   color: #8a1c1c;
 }
 
+.workday-badge.day-chol_hamoed {
+  background: #eef6ee;
+  color: #1f5b2a;
+}
+
 .workday-badge.day-holiday_eve {
+  background: #fff6e0;
   color: #7a5200;
 }
 

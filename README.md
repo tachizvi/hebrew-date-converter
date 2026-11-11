@@ -8,8 +8,13 @@ The browser never calls Hebcal directly. It calls this service's own API, which 
 input, calls Hebcal with a timeout and retry, validates Hebcal's answer, maps it to a clean
 response format, and caches the result.
 
-Selecting a date also shows its **Gregorian month as a calendar with the Hebrew date in every
-day**, built from a single Hebcal _range_ request per month.
+On top of the conversion:
+
+- a **month calendar** with the Hebrew date in every day, from a single Hebcal _range_ request per
+  month, coloured by Israeli workday status;
+- **Israeli business days**: is a date a workday (and if not, why), and what date is N business
+  days from now;
+- **batch conversion** of up to 100 dates in one request, with per-item results.
 
 ![screenshot](docs/screenshot.jpg)
 
@@ -37,33 +42,36 @@ Logs are JSON lines. For readable logs in development: `npm run dev | npx pino-p
 ## Architecture
 
 ```
-Browser (public/)            This service (src/)                                   Hebcal
-─────────────────            ──────────────────────────────────────────────────    ──────────
-index.html + app.js  ──GET /api/convert?date=───▶  routes/convert.ts
-                     ──GET /api/convert-hebrew?─▶  routes/convert.ts
-                     ──GET /api/calendar?month=─▶  routes/calendar.ts
-                                                     │ validation/dateQuery.ts  (400 if invalid)
-                                                     ▼
-                                                  services/converterService.ts ──▶ lib/cache.ts
-                                                     │ (cache miss)                (dates, months)
-                                                     ▼
-                                                  services/hebcalClient.ts  ──HTTPS──▶ /converter
-                                                     │ convert():      ?gy&gm&gd&g2h=1  (one date)
-                                                     │ convertFromHebrew(): ?hy&hm&hd&h2g=1
-                                                     │ convertMonth(): ?start&end       (range)
-                                                     │ timeout, retry, schema check, map to DTO
-                                                     ▼
-                     ◀── JSON (DTO) or JSON error ── middleware/errorHandler.ts
+Browser (public/)              This service (src/)                                          Hebcal
+─────────────────              ─────────────────────────────────────────────────────         ─────────
+app.js / tools.js
+ GET  /api/convert?date=      ─▶ routes/convert.ts  ─┐
+ GET  /api/convert-hebrew?    ─▶ routes/convert.ts   │  validation/dateQuery.ts (400 if invalid)
+ GET  /api/calendar?month=    ─▶ routes/calendar.ts  ├─▶ services/converterService.ts ─▶ cache
+ POST /api/convert/batch      ─▶ routes/batch.ts    ─┘       │ (miss)
+                                                             ▼
+                                                     services/hebcalClient.ts ─────────▶ /converter
+                                                       g2h, h2g, range                    │
+ GET  /api/workday[/month|/add] ─▶ routes/workday.ts ─▶ services/workdayService.ts ─▶ cache│
+                                                       Israeli business-day rules         │
+                                                             │ (miss, once per year)      │
+                                                             ▼                            │
+                                                     services/hebcalHolidaysClient.ts ──▶ /hebcal
+                                                             │
+                                  both clients use ─▶ services/hebcalHttp.ts
+                                                      timeout, retry, status handling, schema check
+                         ◀── JSON or JSON error ── middleware/errorHandler.ts
 ```
 
 | Layer            | File                                                                           | Responsibility                                                                                    |
 | ---------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | Composition root | `src/server.ts`                                                                | Reads config, wires real dependencies, starts the server, graceful shutdown                       |
 | App              | `src/app.ts`                                                                   | Express app factory: request logging + request id, routes, static files, error handler            |
-| Routes           | `src/routes/convert.ts`, `src/routes/calendar.ts`                              | HTTP only: parse query → call service → send JSON                                                 |
+| Routes           | `src/routes/*.ts`                                                              | HTTP only: parse input → call a service → send JSON                                               |
 | Validation       | `src/validation/dateQuery.ts`, `src/lib/dates.ts`, `src/lib/hebrewCalendar.ts` | Strict `YYYY-MM-DD` / `YYYY-MM`, real calendar dates, `afterSunset`; Hebrew months and leap years |
-| Service          | `src/services/converterService.ts`                                             | Business logic: cache lookup, call client, store result                                           |
-| Integration      | `src/services/hebcalClient.ts`                                                 | Everything about Hebcal: URL, timeout, retry, status handling, response validation, mapping       |
+| Services         | `src/services/converterService.ts`, `src/services/workdayService.ts`           | Business logic and caching; no HTTP, no Hebcal details                                            |
+| Integration      | `src/services/hebcalClient.ts`, `src/services/hebcalHolidaysClient.ts`         | Hebcal endpoints: URLs, response schemas, mapping to our DTOs                                     |
+| HTTP plumbing    | `src/services/hebcalHttp.ts`                                                   | Shared by both clients: timeout, retry on transient errors, status handling, schema validation    |
 | Errors           | `src/lib/errors.ts`, `src/middleware/errorHandler.ts`                          | Typed errors → one consistent JSON error shape                                                    |
 | Config           | `src/config.ts`                                                                | Environment variables, validated at startup                                                       |
 
@@ -180,6 +188,76 @@ curl "http://localhost:3000/api/calendar?month=2026-11"
 
 `weekday` is 0 = Sunday … 6 = Saturday. Errors use the same shape and codes as `/api/convert`.
 
+### Israeli workdays
+
+Built on Hebcal's Israeli holiday list (`/hebcal?i=on`), one call per Gregorian year, cached.
+
+| Endpoint                                      | Returns                                                           |
+| --------------------------------------------- | ----------------------------------------------------------------- |
+| `GET /api/workday?date=2026-09-21`            | Whether the date is a workday, its type and the reason            |
+| `GET /api/workday/month?month=2026-09`        | The same for every day of the month (used to colour the calendar) |
+| `GET /api/workday/add?date=2026-09-10&days=3` | The date after N business days, and the non-working days skipped  |
+
+```json
+{
+  "date": "2026-09-21",
+  "weekday": 1,
+  "isWorkday": false,
+  "dayType": "holiday",
+  "reason": "Yom Kippur",
+  "hebrewReason": "יום כיפור"
+}
+```
+
+Business rules (`src/services/workdayService.ts`):
+
+| `dayType`     | When                                                 | `isWorkday` |
+| ------------- | ---------------------------------------------------- | ----------- |
+| `holiday`     | Yom Tov (Hebcal's `yomtov` flag) or Yom HaAtzma'ut   | no          |
+| `weekend`     | Friday or Saturday                                   | no          |
+| `holiday_eve` | The day before a `holiday` (usually a shortened day) | yes         |
+| `chol_hamoed` | Intermediate days of Pesach and Sukkot               | yes         |
+| `workday`     | Any other Sunday–Thursday                            | yes         |
+
+Years 1949–2999; `days` 1–100. Not covered: election days, local or company-specific days off.
+
+### `POST /api/convert/batch`
+
+Converts up to 100 Gregorian dates in one request, for system-to-system use (for example an HR
+system converting employee birthdays).
+
+```bash
+curl -X POST http://localhost:3000/api/convert/batch \
+  -H 'Content-Type: application/json' \
+  -d '{"dates": ["2026-11-11", "2025-02-30", "2026-11-11"]}'
+```
+
+```json
+{
+  "results": [
+    {
+      "input": "2026-11-11",
+      "ok": true,
+      "result": { "hebrew": { "hebrewText": "א׳ בְּכִסְלֵו תשפ״ז", "...": "..." }, "...": "..." }
+    },
+    {
+      "input": "2025-02-30",
+      "ok": false,
+      "error": { "code": "INVALID_DATE", "message": "2025-02-30 is not a valid calendar date" }
+    },
+    { "input": "2026-11-11", "ok": true, "result": { "...": "..." } }
+  ],
+  "summary": { "total": 3, "succeeded": 2, "failed": 1, "uniqueConverted": 1 }
+}
+```
+
+- **Partial success:** one bad date doesn't fail the batch. Every input gets its own result, in
+  input order; the response is `200`. Only a malformed request fails as a whole: invalid JSON or a
+  wrong shape → `400 INVALID_REQUEST`, a body over 16 KB → `413 PAYLOAD_TOO_LARGE`.
+- **Duplicates are converted once**, and the cache serves repeats across batches.
+- **At most 4 Hebcal calls run in parallel** (`src/lib/concurrency.ts`), so a batch of 100 doesn't
+  hit a free public API with 100 simultaneous requests.
+
 ### `GET /api/health`
 
 `{ "status": "ok", "uptimeSeconds": 42 }` — liveness check; does not call Hebcal.
@@ -190,15 +268,16 @@ All settings come from environment variables (see [`.env.example`](.env.example)
 to override). They are validated at startup, so a wrong value stops the service immediately with a
 clear message instead of failing later.
 
-| Variable            | Default                            | Description                                       |
-| ------------------- | ---------------------------------- | ------------------------------------------------- |
-| `PORT`              | `3000`                             | HTTP port                                         |
-| `HEBCAL_BASE_URL`   | `https://www.hebcal.com/converter` | Hebcal endpoint                                   |
-| `HEBCAL_TIMEOUT_MS` | `5000`                             | Timeout per Hebcal request                        |
-| `HEBCAL_RETRIES`    | `1`                                | Extra attempts on network errors / 5xx            |
-| `CACHE_TTL_MS`      | `86400000` (24h)                   | How long a conversion is cached                   |
-| `CACHE_MAX_ENTRIES` | `1000`                             | Cache size limit (least recently used is evicted) |
-| `LOG_LEVEL`         | `info`                             | `fatal` … `trace`, or `silent`                    |
+| Variable              | Default                            | Description                                       |
+| --------------------- | ---------------------------------- | ------------------------------------------------- |
+| `PORT`                | `3000`                             | HTTP port                                         |
+| `HEBCAL_BASE_URL`     | `https://www.hebcal.com/converter` | Hebcal converter endpoint                         |
+| `HEBCAL_HOLIDAYS_URL` | `https://www.hebcal.com/hebcal`    | Hebcal calendar endpoint (Israeli holidays)       |
+| `HEBCAL_TIMEOUT_MS`   | `5000`                             | Timeout per Hebcal request                        |
+| `HEBCAL_RETRIES`      | `1`                                | Extra attempts on network errors / 5xx            |
+| `CACHE_TTL_MS`        | `86400000` (24h)                   | How long a conversion is cached                   |
+| `CACHE_MAX_ENTRIES`   | `1000`                             | Cache size limit (least recently used is evicted) |
+| `LOG_LEVEL`           | `info`                             | `fatal` … `trace`, or `silent`                    |
 
 ## Design decisions
 
@@ -223,6 +302,15 @@ clear message instead of failing later.
 - **Caching.** A date's Hebrew equivalent never changes; Hebcal itself returns
   `Cache-Control: max-age=31536000`. Two in-memory LRU caches with a TTL: single dates keyed by
   `date + afterSunset`, and months keyed by `YYYY-MM`. Errors are never cached.
+- **One HTTP layer for every upstream call.** `hebcalHttp.ts` owns timeout, retry, status
+  handling and schema validation. The converter client and the holidays client only build URLs
+  and map payloads, so a second Hebcal endpoint didn't mean a second copy of the resilience code.
+- **Business rules in one service.** The workday rules live in `WorkdayService`, computed once
+  per year from Hebcal's holiday list and cached. The calendar colouring, the result badge and the
+  business-day calculator all use the same rules through the API; the browser has no copy of them.
+- **Batch: per-item results, not all-or-nothing.** In system integrations one bad record should
+  not block the other 99. Each item carries `ok` and either a result or an error with the same
+  codes as the single-date API, plus a summary for monitoring.
 - **Errors as types.** Each failure is a subclass of `AppError` with an HTTP status and code. One
   middleware converts them into the error JSON; unknown errors become a generic 500 and are logged
   with their stack.
@@ -239,6 +327,10 @@ npm test
 
 - `tests/unit/dateQuery.test.ts` — date and month query formats, impossible dates, `afterSunset`.
 - `tests/unit/dates.test.ts` — leap years, month lengths, weekdays (also for years below 100).
+- `tests/unit/workdayService.test.ts` — every day type (including a holiday on Shabbat and
+  Yom HaAtzma'ut), one Hebcal call per year, adding business days across holidays and across a
+  year boundary.
+- `tests/unit/concurrency.test.ts` — input order kept, never more than the limit in flight.
 - `tests/unit/hebrewDateQuery.test.ts` — Hebrew leap-year cycle, month names, Adar vs. leap
   year, year/day ranges.
 - `tests/unit/cache.test.ts` — TTL expiry and LRU eviction.
@@ -251,7 +343,9 @@ npm test
   stack (route → service → cache → client → error middleware) with only `fetch` faked, for both
   `/api/convert`, `/api/convert-hebrew` and `/api/calendar`: 200, cache hit, 400 (ours and
   Hebcal's), 502, 504, incomplete range,
-  request-id propagation, 404, health.
+  request-id propagation, 404, health. Workday routes (200, 400s without calling Hebcal, 502
+  when the holiday service is down) and the batch endpoint (partial success, duplicates
+  converted once, max 4 parallel calls, per-item outage, 400 for bad bodies and JSON, 413).
 
 GitHub Actions runs lint, type check, tests and build on every push (`.github/workflows/ci.yml`).
 
@@ -287,6 +381,14 @@ GitHub Actions runs lint, type check, tests and build on every push (`.github/wo
   translated into our 400 with Hebcal's message (in the Gregorian direction a Hebcal 400 means our
   own validation missed something, so it stays a 502). As a last guard the client verifies that
   the answer is for the year, month and day that were requested.
+- **Defining "workday" as a business rule.** Hebcal knows holidays, not workdays. The rules
+  (Sun–Thu week, Yom Tov and Yom HaAtzma'ut off, eves and Chol HaMoed as workdays) are an explicit,
+  documented, tested decision. Two details: the "eve" check for Dec 31 needs Jan 1 of the next
+  year, so each yearly request asks for one extra day; and Hebcal spells "Yom HaAtzma’ut" with a
+  curly apostrophe, so it is matched loosely.
+- **Batch without hammering the upstream.** A concurrency-limited pool plus de-duplication, and a
+  body-size limit with a proper `413`, so one large request can't turn into a burst against a free
+  public API.
 - **Out-of-order responses in the UI.** Clicking through months quickly can make a slow response
   arrive after a newer one. Each request gets a sequence number and only the latest one renders.
 - **Weekday for old dates.** `Date.UTC(33, 0, 1)` means 1933, not year 33. The date helpers use
@@ -304,3 +406,6 @@ GitHub Actions runs lint, type check, tests and build on every push (`.github/wo
 - OpenAPI spec for the API, Dockerfile, and deployment.
 - A Hebrew-month calendar view.
 - Prefetch the neighbouring months for instant calendar navigation.
+- Batch: group nearby dates into range requests (one call per ≤180 days) instead of one call per
+  date; accept CSV directly (`text/csv`).
+- Workdays: configurable rules per customer (for example Friday as a half day, or company days off).
