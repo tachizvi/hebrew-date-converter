@@ -17,12 +17,15 @@ export default tseslint.config(
   {
     files: ['public/**/*.js'],
     languageOptions: {
+      sourceType: 'module',
       globals: {
         document: 'readonly',
         window: 'readonly',
         fetch: 'readonly',
         URLSearchParams: 'readonly',
         Option: 'readonly',
+        URL: 'readonly',
+        Blob: 'readonly',
       },
     },
   },

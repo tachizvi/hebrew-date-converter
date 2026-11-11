@@ -1,5 +1,7 @@
 // Front end for the converter. It only talks to our own API
-// (/api/convert, /api/convert-hebrew and /api/calendar), never to Hebcal directly.
+// (/api/convert, /api/convert-hebrew, /api/calendar, /api/workday), never to Hebcal directly.
+
+import { ERROR_MESSAGES, getJson, longGregorian, workdayLabel } from './api.js';
 
 const form = document.getElementById('convert-form');
 const dateInput = document.getElementById('date');
@@ -22,15 +24,7 @@ const calTitle = document.getElementById('cal-title');
 const calHebrewMonths = document.getElementById('cal-hebrew-months');
 const calError = document.getElementById('cal-error');
 const calMeta = document.getElementById('cal-meta');
-
-/** Friendly messages per API error code. */
-const ERROR_MESSAGES = {
-  INVALID_DATE: 'Please enter a valid date.',
-  UPSTREAM_UNAVAILABLE:
-    'The Hebrew calendar service is unavailable right now. Please try again shortly.',
-  UPSTREAM_TIMEOUT: 'The Hebrew calendar service took too long to respond. Please try again.',
-  UPSTREAM_BAD_RESPONSE: 'We received an unexpected answer from the calendar service.',
-};
+const workdayEl = document.getElementById('workday');
 
 /**
  * Hebrew months: `code` is what /api/convert-hebrew accepts, `hebcalName` is how
@@ -106,23 +100,6 @@ function monthLabel(month) {
   );
 }
 
-/** Calls our API and returns the JSON body, or throws an Error with a friendly message. */
-async function getJson(url) {
-  let res;
-  try {
-    res = await fetch(url);
-  } catch {
-    throw new Error('Could not reach the server. Check your connection and try again.');
-  }
-  const body = await res.json().catch(() => null);
-  if (!res.ok) {
-    const code = body?.error?.code;
-    if (code === 'INVALID_DATE' && body.error.message) throw new Error(body.error.message);
-    throw new Error(ERROR_MESSAGES[code] ?? 'Something went wrong. Please try again.');
-  }
-  return body;
-}
-
 // ---------- single date ----------
 
 function setLoading(isLoading) {
@@ -131,20 +108,6 @@ function setLoading(isLoading) {
     b.setAttribute('aria-busy', String(isLoading));
     b.querySelector('.label').textContent = isLoading ? 'Converting…' : 'Convert';
   }
-}
-
-/** "2026-11-11" -> "Wednesday, November 11, 2026" (formatted in UTC so the day never shifts). */
-function longGregorian(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(0);
-  date.setUTCFullYear(y, m - 1, d);
-  return new Intl.DateTimeFormat('en', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(date);
 }
 
 function showError(message) {
@@ -221,11 +184,31 @@ async function convert() {
   setLoading(true);
   try {
     const data = await getJson(`/api/convert?${params}`);
-    if (seq === state.convertSeq) showResult(data, 'g2h');
+    if (seq === state.convertSeq) {
+      showResult(data, 'g2h');
+      showWorkday(data.gregorian.date, seq);
+    }
   } catch (err) {
     if (seq === state.convertSeq) showError(err.message);
   } finally {
     if (seq === state.convertSeq) setLoading(false);
+  }
+}
+
+/**
+ * Adds the Israeli workday status under a result. It's extra information, so
+ * if it fails (or the year is outside the supported range) the badge is just hidden.
+ */
+async function showWorkday(date, seq) {
+  workdayEl.hidden = true;
+  try {
+    const w = await getJson(`/api/workday?date=${date}`);
+    if (seq !== state.convertSeq) return;
+    workdayEl.textContent = workdayLabel(w);
+    workdayEl.className = `workday-badge day-${w.dayType}`;
+    workdayEl.hidden = false;
+  } catch {
+    // Not critical: leave the badge hidden.
   }
 }
 
@@ -271,6 +254,7 @@ async function convertFromHebrew() {
     const data = await getJson(`/api/convert-hebrew?${params}`);
     if (seq !== state.convertSeq) return;
     showResult(data, 'h2g');
+    showWorkday(data.gregorian.date, seq);
     // Keep the rest of the page in sync: Gregorian input + calendar on that day.
     dateInput.value = data.gregorian.date;
     const month = data.gregorian.date.slice(0, 7);
@@ -319,7 +303,7 @@ function hebrewMonthsLabel(days) {
     : spans.map((s) => `${s.month} ${s.year}`).join(' – ');
 }
 
-function renderCalendar(data) {
+function renderCalendar(data, workdays) {
   const today = todayLocal();
   calTitle.textContent = monthLabel(data.month);
   calHebrewMonths.textContent = hebrewMonthsLabel(data.days);
@@ -337,11 +321,11 @@ function renderCalendar(data) {
     cell.type = 'button';
     cell.className = 'cal-day';
     cell.dataset.date = day.date;
-    if (day.weekday === 6) cell.classList.add('shabbat');
     if (day.date === today) cell.classList.add('today');
+    const work = workdays?.get(day.date);
+    if (work) cell.classList.add(`day-${work.dayType}`);
 
     const event = cellEvent(day);
-    if (event && !event.startsWith('Parashat ')) cell.classList.add('has-event');
 
     const nums = document.createElement('span');
     nums.className = 'cal-nums';
@@ -360,11 +344,14 @@ function renderCalendar(data) {
     ev.textContent = event;
 
     cell.append(nums, ev);
-    cell.title = [day.hebrew.hebrewText, ...day.events].join('\n');
+    cell.title = [day.hebrew.hebrewText, ...day.events, work ? workdayLabel(work) : '']
+      .filter(Boolean)
+      .join('\n');
     cell.setAttribute(
       'aria-label',
       `${day.date}, ${day.hebrew.day} ${day.hebrew.month} ${day.hebrew.year}` +
-        (day.events.length ? `, ${day.events.join(', ')}` : ''),
+        (day.events.length ? `, ${day.events.join(', ')}` : '') +
+        (work ? `, ${workdayLabel(work)}` : ''),
     );
     cells.push(cell);
   }
@@ -396,8 +383,17 @@ async function loadCalendar(month) {
   calTitle.textContent = monthLabel(month);
 
   try {
-    const data = await getJson(`/api/calendar?month=${month}`);
-    if (seq === state.calendarSeq) renderCalendar(data);
+    // Both requests in parallel. The workday colouring is optional: if it fails,
+    // the calendar still renders without it.
+    const [calendar, workdays] = await Promise.allSettled([
+      getJson(`/api/calendar?month=${month}`),
+      getJson(`/api/workday/month?month=${month}`),
+    ]);
+    if (seq !== state.calendarSeq) return;
+    if (calendar.status === 'rejected') throw calendar.reason;
+    const workdayMap =
+      workdays.status === 'fulfilled' ? new Map(workdays.value.days.map((d) => [d.date, d])) : null;
+    renderCalendar(calendar.value, workdayMap);
   } catch (err) {
     if (seq !== state.calendarSeq) return;
     calGrid.replaceChildren();

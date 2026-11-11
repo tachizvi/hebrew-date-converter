@@ -80,6 +80,7 @@
         <section id="result" class="result" aria-live="polite" hidden>
           <p id="primary" class="primary"></p>
           <p id="secondary" class="secondary"></p>
+          <p id="workday" class="workday-badge" hidden></p>
           <div class="events-block">
             <h2>Events</h2>
             <ul id="events" class="events"></ul>
@@ -107,8 +108,106 @@
           ><span>Fri</span><span>Sat</span>
         </div>
         <div id="cal-grid" class="cal-grid" role="grid" aria-busy="true"></div>
+        <ul class="cal-legend" aria-label="Legend">
+          <li><span class="swatch day-holiday"></span>Holiday (day off)</li>
+          <li><span class="swatch day-holiday_eve"></span>Holiday eve</li>
+          <li><span class="swatch day-chol_hamoed"></span>Chol HaMoed</li>
+          <li><span class="swatch day-weekend"></span>Weekend (Fri–Sat)</li>
+        </ul>
         <p id="cal-error" class="error" role="alert" hidden></p>
         <p id="cal-meta" class="meta"></p>
+      </section>
+
+      <section class="card tools-card" aria-labelledby="tools-title">
+        <h2 id="tools-title">Tools</h2>
+        <div class="tabs" role="tablist" aria-label="Tools">
+          <button
+            id="tab-workdays"
+            class="tab"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="workdays-panel"
+          >
+            Business days
+          </button>
+          <button
+            id="tab-batch"
+            class="tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="batch-panel"
+          >
+            Batch convert
+          </button>
+        </div>
+
+        <div id="workdays-panel" role="tabpanel" aria-labelledby="tab-workdays">
+          <p class="hint">
+            When is a date N Israeli business days from now? Weekends (Fri–Sat) and holidays are
+            skipped; holiday eves and Chol HaMoed count as workdays.
+          </p>
+          <form id="workdays-form" class="inline-form" novalidate>
+            <div class="field">
+              <label for="wd-from">From</label>
+              <input id="wd-from" type="date" required />
+            </div>
+            <div class="field">
+              <label for="wd-days">Business days</label>
+              <input id="wd-days" type="number" min="1" max="100" value="5" required />
+            </div>
+            <button id="wd-submit" type="submit">
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="label">Calculate</span>
+            </button>
+          </form>
+          <div id="wd-result" class="tool-result" aria-live="polite" hidden></div>
+          <p id="wd-error" class="error" role="alert" hidden></p>
+        </div>
+
+        <div id="batch-panel" role="tabpanel" aria-labelledby="tab-batch" hidden>
+          <p class="hint">
+            Paste up to 100 dates (YYYY-MM-DD), one per line or comma-separated, or load a CSV file.
+            Invalid lines are reported without failing the rest.
+          </p>
+          <textarea id="batch-input" rows="6" spellcheck="false" aria-label="Dates to convert">
+2026-11-11
+2027-04-22
+2026-02-30
+2026-11-11</textarea>
+          <div class="batch-actions">
+            <label class="file-button">
+              Load CSV…
+              <input id="batch-file" type="file" accept=".csv,.txt,text/csv,text/plain" />
+            </label>
+            <button id="batch-submit" type="button">
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="label">Convert all</span>
+            </button>
+          </div>
+          <p id="batch-error" class="error" role="alert" hidden></p>
+          <div id="batch-result" aria-live="polite" hidden>
+            <div class="batch-summary">
+              <p id="batch-summary"></p>
+              <button id="batch-download" class="secondary-button" type="button">
+                Download CSV
+              </button>
+            </div>
+            <div class="table-wrap">
+              <table class="batch-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Input</th>
+                    <th scope="col">Hebrew date</th>
+                    <th scope="col">Details</th>
+                  </tr>
+                </thead>
+                <tbody id="batch-rows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </section>
 
       <footer>
@@ -119,11 +218,12 @@
           rel="noopener"
           >Hebcal REST API</a
         >
-        via this service's <code>/api/convert</code>, <code>/api/convert-hebrew</code> and
-        <code>/api/calendar</code>.
+        through this service's own API (<code>/api/convert</code>, <code>/api/convert-hebrew</code>,
+        <code>/api/calendar</code>, <code>/api/workday</code>, <code>/api/convert/batch</code>).
       </footer>
     </div>
 
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
+    <script type="module" src="tools.js"></script>
   </body>
 </html>

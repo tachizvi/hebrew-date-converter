@@ -373,12 +373,72 @@ footer a {
   visibility: hidden;
 }
 
-.cal-day.shabbat {
-  background: #fafbfd;
+/* Israeli workday colouring (from /api/workday/month) */
+.day-weekend {
+  background: #f3f4f6;
 }
 
-.cal-day.has-event {
-  background: #f3f7ff;
+.day-holiday {
+  background: #fdecec;
+}
+
+.day-holiday_eve {
+  background: #fff6e0;
+}
+
+.day-chol_hamoed {
+  background: #eef6ee;
+}
+
+.cal-day.day-weekend .cal-greg {
+  color: var(--muted);
+}
+
+.cal-legend {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.cal-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.workday-badge {
+  margin: 12px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  text-align: center;
+  background: #eef6ee;
+  color: #1f5b2a;
+}
+
+.workday-badge.day-weekend {
+  background: #f3f4f6;
+  color: var(--muted);
+}
+
+.workday-badge.day-holiday {
+  color: #8a1c1c;
+}
+
+.workday-badge.day-holiday_eve {
+  color: #7a5200;
 }
 
 .cal-day.selected {
@@ -457,8 +517,148 @@ footer a {
   .cal-heb {
     font-size: 0.8rem;
   }
-  .cal-day.has-event .cal-heb {
+  .cal-day.day-holiday .cal-heb {
     color: var(--accent);
     font-weight: 700;
+  }
+}
+
+/* ---------- Tools ---------- */
+
+.tools-card {
+  max-width: 760px;
+}
+
+.tools-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+}
+
+.tools-card .hint {
+  margin: 0 0 12px;
+}
+
+.inline-form {
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+}
+
+.tool-result {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.tool-result .primary {
+  text-align: left;
+  font-size: 1.25rem;
+}
+
+.skipped {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+textarea {
+  width: 100%;
+  font:
+    0.9rem ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  resize: vertical;
+  background: var(--card);
+  color: var(--text);
+}
+
+.batch-actions,
+.batch-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.batch-summary p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.file-button,
+.secondary-button {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: var(--chip);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.secondary-button:hover,
+.file-button:hover {
+  background: #dfe7fb;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.file-button:focus-within {
+  outline: 3px solid rgba(36, 86, 214, 0.35);
+}
+
+.table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.batch-table th,
+.batch-table td {
+  text-align: left;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.batch-table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.batch-table td:first-child {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.batch-table tr.failed td {
+  color: var(--error-text);
+  background: var(--error-bg);
+}
+
+@media (max-width: 560px) {
+  .inline-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .inline-form button {
+    grid-column: 1 / -1;
   }
 }
