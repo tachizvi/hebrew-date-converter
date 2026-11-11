@@ -561,6 +561,22 @@ footer a {
   font-size: 1.25rem;
 }
 
+.tool-result .secondary {
+  text-align: start;
+}
+
+.tool-hebrew {
+  margin: 2px 0 6px;
+  font-family: 'David', 'Arial Hebrew', 'Noto Sans Hebrew', serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+[dir='rtl'] .tool-hebrew {
+  text-align: right;
+}
+
 .skipped {
   margin: 8px 0 0;
   padding-left: 18px;
@@ -699,9 +715,17 @@ textarea {
   color: #fff;
 }
 
-/* In RTL the "previous" button sits on the right, so its arrow should point right. */
-[dir='rtl'] .icon-button {
-  transform: scaleX(-1);
+/*
+ * Month navigation keeps one layout in both languages: "‹ previous" on the left,
+ * "next ›" on the right, so › always means "forward". Without this, RTL would swap
+ * the buttons and the browser would also mirror the ‹ › characters.
+ */
+[dir='rtl'] .cal-header {
+  direction: ltr;
+}
+
+[dir='rtl'] .cal-titles {
+  direction: rtl;
 }
 
 [dir='rtl'] .tool-result .primary,

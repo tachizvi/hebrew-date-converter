@@ -201,11 +201,11 @@ curl "http://localhost:3000/api/calendar?month=2026-11"
 
 Built on Hebcal's Israeli holiday list (`/hebcal?i=on`), one call per Gregorian year, cached.
 
-| Endpoint                                      | Returns                                                           |
-| --------------------------------------------- | ----------------------------------------------------------------- |
-| `GET /api/workday?date=2026-09-21`            | Whether the date is a workday, its type and the reason            |
-| `GET /api/workday/month?month=2026-09`        | The same for every day of the month (used to colour the calendar) |
-| `GET /api/workday/add?date=2026-09-10&days=3` | The date after N business days, and the non-working days skipped  |
+| Endpoint                                      | Returns                                                                                                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `GET /api/workday?date=2026-09-21`            | Whether the date is a workday, its type and the reason                                                    |
+| `GET /api/workday/month?month=2026-09`        | The same for every day of the month (used to colour the calendar)                                         |
+| `GET /api/workday/add?date=2026-09-10&days=3` | The date after N business days (with its Hebrew date in `resultHebrew`), and the non-working days skipped |
 
 ```json
 {

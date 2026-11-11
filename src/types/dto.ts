@@ -114,6 +114,8 @@ export interface AddWorkdaysDto {
   workdays: number;
   /** The date reached after counting `workdays` working days after `from` */
   result: WorkdayDto;
+  /** Hebrew date of `result`; null if the conversion was unavailable at the time */
+  resultHebrew: HebrewPart | null;
   /** Non-working days that were skipped on the way */
   skipped: WorkdayDto[];
 }

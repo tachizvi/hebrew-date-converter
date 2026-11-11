@@ -49,7 +49,7 @@ export function createApp({ converterService, workdayService, logger }: AppDeps)
   app.use('/api', convertRouter(converterService));
   app.use('/api', batchRouter(converterService));
   app.use('/api', calendarRouter(converterService));
-  app.use('/api', workdayRouter(workdayService));
+  app.use('/api', workdayRouter(workdayService, converterService));
   app.use('/api', notFoundHandler);
 
   app.use(express.static(publicDir));

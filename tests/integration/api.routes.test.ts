@@ -221,6 +221,19 @@ describe('workday routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.result.date).toBe('2026-09-16');
     expect(res.body.skipped).toHaveLength(3);
+    // fakeHebcal's converter always answers Kislev 1 5787
+    expect(res.body.resultHebrew).toMatchObject({ month: 'Kislev', day: 1, year: 5787 });
+  });
+
+  it('GET /api/workday/add still answers when the Hebrew conversion fails', async () => {
+    const holidays = fakeHebcal();
+    const fetchFn = vi.fn<typeof fetch>(async (input, init) =>
+      String(input).includes('/converter') ? jsonResponse({}, 503) : holidays(input, init),
+    );
+    const res = await request(buildApp(fetchFn)).get('/api/workday/add?date=2026-09-10&days=3');
+    expect(res.status).toBe(200);
+    expect(res.body.result.date).toBe('2026-09-16');
+    expect(res.body.resultHebrew).toBeNull();
   });
 
   it.each([

@@ -53,6 +53,13 @@ function renderWorkdays(data) {
   title.className = 'primary';
   title.textContent = longGregorian(data.result.date);
 
+  // Hebrew date of the result (the API adds it; null if it was unavailable).
+  const hebrew = document.createElement('p');
+  hebrew.className = 'tool-hebrew';
+  hebrew.lang = 'he';
+  hebrew.dir = 'rtl';
+  hebrew.textContent = data.resultHebrew?.hebrewText ?? '';
+
   const summary = document.createElement('p');
   summary.className = 'secondary';
   summary.textContent =
@@ -67,7 +74,12 @@ function renderWorkdays(data) {
     list.append(li);
   }
 
-  wdResult.replaceChildren(title, summary, ...(data.skipped.length ? [list] : []));
+  wdResult.replaceChildren(
+    title,
+    ...(data.resultHebrew ? [hebrew] : []),
+    summary,
+    ...(data.skipped.length ? [list] : []),
+  );
   wdResult.hidden = false;
 }
 
@@ -155,14 +167,11 @@ function renderBatch(data) {
     ...data.results.map((r) => {
       const tr = document.createElement('tr');
       if (r.ok) {
-        const h = r.result.hebrew;
+        // The Hebrew date column already names the date, so details only list events.
         tr.append(
           cell(r.input),
-          cell(h.hebrewText, { lang: 'he', dir: 'rtl' }),
-          cell(
-            `${h.day} ${h.month} ${h.year}` +
-              (r.result.events.length ? ` · ${r.result.events.join(', ')}` : ''),
-          ),
+          cell(r.result.hebrew.hebrewText, { lang: 'he', dir: 'rtl' }),
+          cell(r.result.events.length ? r.result.events.join(', ') : '—'),
         );
       } else {
         tr.className = 'failed';

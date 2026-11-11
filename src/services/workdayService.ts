@@ -59,7 +59,7 @@ export class WorkdayService {
       else skipped.push(day);
     } while (counted < workdays);
 
-    return { from, workdays, result: day, skipped };
+    return { from, workdays, result: day, resultHebrew: null, skipped };
   }
 
   private async getYear(year: number): Promise<Map<string, WorkdayDto>> {
