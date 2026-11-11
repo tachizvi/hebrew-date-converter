@@ -7,40 +7,63 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="card">
-      <header>
-        <h1>Hebrew Date Converter</h1>
-        <p class="subtitle">Convert a Gregorian date to the Hebrew calendar.</p>
-      </header>
+    <div class="page">
+      <main class="card converter">
+        <header>
+          <h1>Hebrew Date Converter</h1>
+          <p class="subtitle">Convert a Gregorian date to the Hebrew calendar.</p>
+        </header>
 
-      <form id="convert-form" novalidate>
-        <div class="field">
-          <label for="date">Gregorian date</label>
-          <input id="date" name="date" type="date" required />
+        <form id="convert-form" novalidate>
+          <div class="field">
+            <label for="date">Gregorian date</label>
+            <input id="date" name="date" type="date" required />
+          </div>
+
+          <label class="checkbox">
+            <input id="afterSunset" name="afterSunset" type="checkbox" />
+            After sunset <span class="hint">(the Hebrew day starts at nightfall)</span>
+          </label>
+
+          <button id="submit" type="submit">
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="label">Convert</span>
+          </button>
+        </form>
+
+        <section id="result" class="result" aria-live="polite" hidden>
+          <p id="hebrew-text" class="hebrew" dir="rtl" lang="he"></p>
+          <p id="transliteration" class="transliteration"></p>
+          <div class="events-block">
+            <h2>Events</h2>
+            <ul id="events" class="events"></ul>
+          </div>
+          <p id="meta" class="meta"></p>
+        </section>
+
+        <p id="error" class="error" role="alert" hidden></p>
+      </main>
+
+      <section class="card calendar-card" aria-labelledby="cal-title">
+        <div class="cal-header">
+          <button id="cal-prev" class="icon-button" type="button" aria-label="Previous month">
+            ‹
+          </button>
+          <div class="cal-titles">
+            <h2 id="cal-title">&nbsp;</h2>
+            <p id="cal-hebrew-months" class="cal-hebrew-months" dir="rtl" lang="he">&nbsp;</p>
+          </div>
+          <button id="cal-next" class="icon-button" type="button" aria-label="Next month">›</button>
         </div>
 
-        <label class="checkbox">
-          <input id="afterSunset" name="afterSunset" type="checkbox" />
-          After sunset <span class="hint">(the Hebrew day starts at nightfall)</span>
-        </label>
-
-        <button id="submit" type="submit">
-          <span class="spinner" aria-hidden="true"></span>
-          <span class="label">Convert</span>
-        </button>
-      </form>
-
-      <section id="result" class="result" aria-live="polite" hidden>
-        <p id="hebrew-text" class="hebrew" dir="rtl" lang="he"></p>
-        <p id="transliteration" class="transliteration"></p>
-        <div class="events-block">
-          <h2>Events</h2>
-          <ul id="events" class="events"></ul>
+        <div class="cal-weekdays" aria-hidden="true">
+          <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span
+          ><span>Fri</span><span>Sat</span>
         </div>
-        <p id="meta" class="meta"></p>
+        <div id="cal-grid" class="cal-grid" role="grid" aria-busy="true"></div>
+        <p id="cal-error" class="error" role="alert" hidden></p>
+        <p id="cal-meta" class="meta"></p>
       </section>
-
-      <p id="error" class="error" role="alert" hidden></p>
 
       <footer>
         Data from the
@@ -50,9 +73,9 @@
           rel="noopener"
           >Hebcal REST API</a
         >
-        via this service's <code>GET /api/convert</code>.
+        via this service's <code>GET /api/convert</code> and <code>GET /api/calendar</code>.
       </footer>
-    </main>
+    </div>
 
     <script src="app.js"></script>
   </body>
