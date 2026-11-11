@@ -59,3 +59,90 @@ export function hebcalRange(year: number, month: number, opts: { omit?: string[]
     hdates,
   };
 }
+
+/** Israeli holidays as Hebcal's /hebcal endpoint returns them (subset, real titles and dates). */
+export const israeliHolidays2026 = [
+  {
+    date: '2026-04-21',
+    title: 'Yom HaZikaron',
+    hebrew: 'יום הזכרון',
+    category: 'holiday',
+    subcat: 'modern',
+  },
+  {
+    date: '2026-04-22',
+    title: 'Yom HaAtzma’ut',
+    hebrew: 'יום העצמאות',
+    category: 'holiday',
+    subcat: 'modern',
+  },
+  {
+    date: '2026-09-11',
+    title: 'Erev Rosh Hashana',
+    hebrew: 'ערב ראש השנה',
+    category: 'holiday',
+    subcat: 'major',
+  },
+  {
+    date: '2026-09-12',
+    title: 'Rosh Hashana 5787',
+    hebrew: 'ראש השנה 5787',
+    category: 'holiday',
+    subcat: 'major',
+    yomtov: true,
+  },
+  {
+    date: '2026-09-13',
+    title: 'Rosh Hashana II',
+    hebrew: 'ראש השנה ב׳',
+    category: 'holiday',
+    subcat: 'major',
+    yomtov: true,
+  },
+  {
+    date: '2026-09-20',
+    title: 'Erev Yom Kippur',
+    hebrew: 'ערב יום כפור',
+    category: 'holiday',
+    subcat: 'major',
+  },
+  {
+    date: '2026-09-21',
+    title: 'Yom Kippur',
+    hebrew: 'יום כפור',
+    category: 'holiday',
+    subcat: 'major',
+    yomtov: true,
+  },
+  {
+    date: '2026-09-26',
+    title: 'Sukkot I',
+    hebrew: 'סוכות א׳',
+    category: 'holiday',
+    subcat: 'major',
+    yomtov: true,
+  },
+  {
+    date: '2026-09-28',
+    title: 'Sukkot III (CH’’M)',
+    hebrew: 'סוכות ג׳ (חוה״מ)',
+    category: 'holiday',
+    subcat: 'major',
+  },
+];
+
+/**
+ * A fake fetch that serves both Hebcal endpoints: /hebcal (holidays, filtered
+ * by the requested start/end) and /converter (always Kislev 1). Records calls.
+ */
+export function fakeHebcal(holidays: Array<{ date: string }> = israeliHolidays2026) {
+  return vi.fn<typeof fetch>(async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/hebcal')) {
+      const start = url.searchParams.get('start')!;
+      const end = url.searchParams.get('end')!;
+      return jsonResponse({ items: holidays.filter((h) => h.date >= start && h.date <= end) });
+    }
+    return jsonResponse(hebcalKislev1);
+  });
+}
