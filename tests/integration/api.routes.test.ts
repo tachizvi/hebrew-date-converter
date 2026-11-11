@@ -139,6 +139,54 @@ describe('GET /api/calendar', () => {
   });
 });
 
+describe('GET /api/convert-hebrew', () => {
+  it('converts a Hebrew date to Gregorian', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalKislev1));
+    const res = await request(buildApp(fetchFn)).get(
+      '/api/convert-hebrew?year=5787&month=Kislev&day=1',
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      gregorian: { date: '2026-11-11' },
+      hebrew: { year: 5787, month: 'Kislev', day: 1 },
+      cached: false,
+    });
+  });
+
+  it('caches the conversion', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalKislev1));
+    const app = buildApp(fetchFn);
+    await request(app).get('/api/convert-hebrew?year=5787&month=Kislev&day=1');
+    const second = await request(app).get('/api/convert-hebrew?year=5787&month=Kislev&day=1');
+    expect(second.body.cached).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 400 for Adar in a leap year without calling Hebcal', async () => {
+    const fetchFn = vi.fn<typeof fetch>();
+    const res = await request(buildApp(fetchFn)).get(
+      '/api/convert-hebrew?year=5787&month=Adar&day=1',
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/leap year/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("passes Hebcal's day-range rejection on as a 400", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ error: 'Hebrew day 30 out of valid range 1-29 for Elul 5787' }, 400),
+    );
+    const res = await request(buildApp(fetchFn)).get(
+      '/api/convert-hebrew?year=5787&month=Elul&day=30',
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatchObject({
+      code: 'INVALID_DATE',
+      message: 'Hebrew day 30 out of valid range 1-29 for Elul 5787',
+    });
+  });
+});
+
 describe('other routes', () => {
   it('GET /api/health is ok', async () => {
     const res = await request(buildApp(vi.fn())).get('/api/health');

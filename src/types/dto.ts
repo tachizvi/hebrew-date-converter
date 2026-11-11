@@ -1,3 +1,5 @@
+import type { HebrewMonthCode } from '../lib/hebrewCalendar.js';
+
 /**
  * The public contract of our API. It is deliberately independent of Hebcal's
  * field names (hy, hm, hd, heDateParts...) so we can change provider, or
@@ -52,6 +54,14 @@ export interface CalendarResponse extends MonthCalendarDto {
 export interface ConvertResponse extends HebrewDateDto {
   source: 'hebcal';
   cached: boolean;
+}
+
+/** Validated input for a Hebrew -> Gregorian conversion. */
+export interface HebrewDateQuery {
+  year: number;
+  /** Month code as Hebcal accepts it, e.g. "Kislev", "Adar1" */
+  month: HebrewMonthCode;
+  day: number;
 }
 
 /** Validated input for a month calendar. */

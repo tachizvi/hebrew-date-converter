@@ -50,3 +50,20 @@ export class UpstreamBadResponseError extends AppError {
     super(502, 'UPSTREAM_BAD_RESPONSE', message, options);
   }
 }
+
+/**
+ * Hebcal understood the request but refused it (4xx), e.g.
+ * "Hebrew day 30 out of valid range 1-29 for Elul 5787". Kept separate so a
+ * caller can decide whether that is our bug (502) or the user's input (400).
+ */
+export class UpstreamRejectedError extends UpstreamBadResponseError {
+  constructor(
+    public readonly upstreamStatus: number,
+    public readonly upstreamMessage: string,
+  ) {
+    super(
+      `Hebcal rejected the request (HTTP ${upstreamStatus})` +
+        (upstreamMessage ? `: ${upstreamMessage}` : ''),
+    );
+  }
+}

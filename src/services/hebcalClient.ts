@@ -3,14 +3,18 @@ import type { Logger } from '../lib/logger.js';
 import {
   AppError,
   UpstreamBadResponseError,
+  UpstreamRejectedError,
   UpstreamTimeoutError,
   UpstreamUnavailableError,
+  ValidationError,
 } from '../lib/errors.js';
+import { hebcalMonthName } from '../lib/hebrewCalendar.js';
 import { dayOfWeek, isoDatesOfMonth, toIsoDate } from '../lib/dates.js';
 import type {
   CalendarQuery,
   ConvertQuery,
   HebrewDateDto,
+  HebrewDateQuery,
   HebrewPart,
   MonthCalendarDto,
 } from '../types/dto.js';
@@ -62,6 +66,8 @@ export interface HebcalClientOptions {
 export interface HebcalClient {
   /** One Gregorian date -> Hebrew date. */
   convert(query: ConvertQuery): Promise<HebrewDateDto>;
+  /** One Hebrew date -> Gregorian date (`h2g=1`). */
+  convertFromHebrew(query: HebrewDateQuery): Promise<HebrewDateDto>;
   /** A whole Gregorian month in a single Hebcal call (range mode). */
   convertMonth(query: CalendarQuery): Promise<MonthCalendarDto>;
 }
@@ -69,10 +75,10 @@ export interface HebcalClient {
 export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
   const { baseUrl, timeoutMs, retries, logger, fetchFn = fetch, retryDelayMs = 200 } = options;
 
-  function buildUrl(params: Record<string, string>): string {
+  function buildUrl(params: Record<string, string>, direction: 'g2h' | 'h2g' = 'g2h'): string {
     const url = new URL(baseUrl);
     url.searchParams.set('cfg', 'json');
-    url.searchParams.set('g2h', '1');
+    url.searchParams.set(direction, '1');
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     return url.toString();
   }
@@ -119,10 +125,7 @@ export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
         const upstreamMessage =
           typeof body === 'object' && body !== null && 'error' in body ? String(body.error) : '';
         logger.warn({ url, status: response.status, upstreamMessage }, 'hebcal rejected request');
-        throw new UpstreamBadResponseError(
-          `Hebcal rejected the request (HTTP ${response.status})` +
-            (upstreamMessage ? `: ${upstreamMessage}` : ''),
-        );
+        throw new UpstreamRejectedError(response.status, upstreamMessage);
       }
 
       return body;
@@ -186,6 +189,46 @@ export function createHebcalClient(options: HebcalClientOptions): HebcalClient {
       const r = await fetchValidated(url, singleDateSchema);
       return {
         gregorian: { date: toIsoDate(q), afterSunset: r.afterSunset ?? q.afterSunset },
+        hebrew: toHebrewPart(r),
+        events: r.events ?? [],
+      };
+    },
+
+    async convertFromHebrew(q) {
+      const url = buildUrl({ hy: String(q.year), hm: q.month, hd: String(q.day) }, 'h2g');
+
+      let r: z.infer<typeof singleDateSchema>;
+      try {
+        r = await fetchValidated(url, singleDateSchema);
+      } catch (err) {
+        // Day 30 of a 29-day month is only known to the calendar itself, so here
+        // Hebcal's 400 IS a user input problem: pass its message on as our 400.
+        if (
+          err instanceof UpstreamRejectedError &&
+          err.upstreamStatus === 400 &&
+          err.upstreamMessage
+        ) {
+          throw new ValidationError(err.upstreamMessage);
+        }
+        throw err;
+      }
+
+      // Hebcal can silently re-map a month (e.g. Adar in a leap year -> Adar II).
+      // Our validation prevents that, and this check makes sure the answer is
+      // really for the date we asked about.
+      const expectedMonth = hebcalMonthName(q.month);
+      if (r.hy !== q.year || r.hd !== q.day || r.hm !== expectedMonth || r.gy < 1) {
+        logger.error(
+          { url, requested: q, got: { hy: r.hy, hm: r.hm, hd: r.hd, gy: r.gy } },
+          'hebcal answered a different date',
+        );
+        throw new UpstreamBadResponseError(
+          `Hebcal answered for ${r.hd} ${r.hm} ${r.hy} instead of ${q.day} ${expectedMonth} ${q.year}`,
+        );
+      }
+
+      return {
+        gregorian: { date: toIsoDate({ year: r.gy, month: r.gm, day: r.gd }), afterSunset: false },
         hebrew: toHebrewPart(r),
         events: r.events ?? [],
       };

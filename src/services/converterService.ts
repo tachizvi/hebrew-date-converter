@@ -7,6 +7,7 @@ import type {
   ConvertQuery,
   ConvertResponse,
   HebrewDateDto,
+  HebrewDateQuery,
   MonthCalendarDto,
 } from '../types/dto.js';
 import type { HebcalClient } from './hebcalClient.js';
@@ -42,6 +43,22 @@ export class ConverterService {
 
     this.logger.debug({ key }, 'cache miss');
     const dto = await this.client.convert(query);
+    this.caches.dates.set(key, dto);
+    return { ...dto, source: 'hebcal', cached: false };
+  }
+
+  /** Hebrew -> Gregorian, cached in the same date cache under its own key prefix. */
+  async convertFromHebrew(query: HebrewDateQuery): Promise<ConvertResponse> {
+    const key = `h2g|${query.year}-${query.month}-${query.day}`;
+
+    const hit = this.caches.dates.get(key);
+    if (hit) {
+      this.logger.debug({ key }, 'cache hit');
+      return { ...hit, source: 'hebcal', cached: true };
+    }
+
+    this.logger.debug({ key }, 'cache miss');
+    const dto = await this.client.convertFromHebrew(query);
     this.caches.dates.set(key, dto);
     return { ...dto, source: 'hebcal', cached: false };
   }

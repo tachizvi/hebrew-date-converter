@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ValidationError,
   UpstreamBadResponseError,
   UpstreamTimeoutError,
   UpstreamUnavailableError,
@@ -182,5 +183,60 @@ describe('hebcalClient.convertMonth (range mode)', () => {
     const month = await client(fetchFn).convertMonth({ year: 2026, month: 11 });
     expect(month.days).toHaveLength(30);
     expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('hebcalClient.convertFromHebrew (h2g)', () => {
+  const hq = { year: 5787, month: 'Kislev' as const, day: 1 };
+
+  it('calls h2g with the Hebrew date and maps the Gregorian result', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse(hebcalKislev1));
+
+    const dto = await client(fetchFn).convertFromHebrew(hq);
+
+    const url = new URL(String(fetchFn.mock.calls[0]![0]));
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      cfg: 'json',
+      h2g: '1',
+      hy: '5787',
+      hm: 'Kislev',
+      hd: '1',
+    });
+    expect(dto.gregorian.date).toBe('2026-11-11');
+    expect(dto.hebrew).toMatchObject({ year: 5787, month: 'Kislev', day: 1 });
+  });
+
+  it("turns Hebcal's 400 (e.g. day 30 of a 29-day month) into a ValidationError", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ error: 'Hebrew day 30 out of valid range 1-29 for Elul 5787' }, 400),
+    );
+    const promise = client(fetchFn).convertFromHebrew({ year: 5787, month: 'Elul', day: 30 });
+    await expect(promise).rejects.toBeInstanceOf(ValidationError);
+    await expect(promise).rejects.toThrow('Hebrew day 30 out of valid range 1-29 for Elul 5787');
+  });
+
+  it('rejects an answer for a different month than requested (silent re-mapping)', async () => {
+    // What Hebcal does for "Adar" in a leap year: it answers for Adar II.
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ ...hebcalKislev1, hm: 'Adar II', gy: 2027, gm: 3, gd: 10 }),
+    );
+    await expect(
+      client(fetchFn).convertFromHebrew({ year: 5787, month: 'Adar1', day: 1 }),
+    ).rejects.toThrow(/instead of 1 Adar I 5787/);
+  });
+
+  it('maps the Hebcal month spelling (Shvat -> "Sh\'vat")', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ ...hebcalKislev1, hm: "Sh'vat", hd: 15, gy: 2027, gm: 1, gd: 23 }),
+    );
+    const dto = await client(fetchFn).convertFromHebrew({ year: 5787, month: 'Shvat', day: 15 });
+    expect(dto.gregorian.date).toBe('2027-01-23');
+  });
+
+  it('still reports a 5xx as unavailable', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse({}, 503));
+    await expect(client(fetchFn, { retries: 0 }).convertFromHebrew(hq)).rejects.toBeInstanceOf(
+      UpstreamUnavailableError,
+    );
   });
 });
