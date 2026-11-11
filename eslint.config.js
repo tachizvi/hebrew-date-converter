@@ -22,6 +22,7 @@ export default tseslint.config(
         window: 'readonly',
         fetch: 'readonly',
         URLSearchParams: 'readonly',
+        Option: 'readonly',
       },
     },
   },

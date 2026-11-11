@@ -16,6 +16,11 @@
   box-sizing: border-box;
 }
 
+/* Elements styled with display: grid/flex would otherwise ignore the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -76,11 +81,59 @@ label {
   font-weight: 600;
 }
 
-input[type='date'] {
+input[type='date'],
+input[type='number'],
+select {
   font: inherit;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: var(--chip);
+  border-radius: 10px;
+}
+
+.tab {
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.tab:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.tab[aria-selected='true'] {
+  background: var(--card);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(20, 30, 60, 0.12);
+}
+
+.hebrew-fields {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 1.1fr;
+  gap: 10px;
+}
+
+.hebrew-fields input,
+.hebrew-fields select {
+  width: 100%;
+  min-width: 0;
+  background: var(--card);
+  color: var(--text);
+}
+
+#h-leap {
+  margin: -4px 0 0;
+  min-height: 1.3em;
 }
 
 .checkbox {
@@ -120,6 +173,7 @@ button:disabled {
 }
 
 input:focus-visible,
+select:focus-visible,
 button:focus-visible {
   outline: 3px solid rgba(36, 86, 214, 0.35);
   outline-offset: 2px;
@@ -151,15 +205,19 @@ button[aria-busy='true'] .spinner {
   border-top: 1px solid var(--border);
 }
 
-.hebrew {
+.primary {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.6rem;
   font-weight: 700;
   text-align: center;
+}
+
+.primary:lang(he) {
+  font-size: 2rem;
   font-family: 'David', 'Arial Hebrew', 'Noto Sans Hebrew', serif;
 }
 
-.transliteration {
+.secondary {
   margin: 4px 0 16px;
   text-align: center;
   color: var(--muted);
@@ -365,6 +423,15 @@ footer a {
 }
 
 @media (max-width: 560px) {
+  .hebrew-fields {
+    grid-template-columns: 1fr 1.4fr;
+  }
+  .hebrew-fields .field:last-child {
+    grid-column: 1 / -1;
+  }
+  .primary {
+    font-size: 1.35rem;
+  }
   .calendar-card {
     padding: 14px 10px;
   }

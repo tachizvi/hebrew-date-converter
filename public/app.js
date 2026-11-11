@@ -1,5 +1,5 @@
 // Front end for the converter. It only talks to our own API
-// (/api/convert and /api/calendar), never to Hebcal directly.
+// (/api/convert, /api/convert-hebrew and /api/calendar), never to Hebcal directly.
 
 const form = document.getElementById('convert-form');
 const dateInput = document.getElementById('date');
@@ -7,6 +7,15 @@ const afterSunsetInput = document.getElementById('afterSunset');
 const button = document.getElementById('submit');
 const resultEl = document.getElementById('result');
 const errorEl = document.getElementById('error');
+
+const hebrewForm = document.getElementById('hebrew-form');
+const hDay = document.getElementById('h-day');
+const hMonth = document.getElementById('h-month');
+const hYear = document.getElementById('h-year');
+const hLeap = document.getElementById('h-leap');
+const hButton = document.getElementById('h-submit');
+const tabG2h = document.getElementById('tab-g2h');
+const tabH2g = document.getElementById('tab-h2g');
 
 const calGrid = document.getElementById('cal-grid');
 const calTitle = document.getElementById('cal-title');
@@ -23,7 +32,41 @@ const ERROR_MESSAGES = {
   UPSTREAM_BAD_RESPONSE: 'We received an unexpected answer from the calendar service.',
 };
 
+/**
+ * Hebrew months: `code` is what /api/convert-hebrew accepts, `hebcalName` is how
+ * the API spells it in responses (mirrors src/lib/hebrewCalendar.ts).
+ */
+const HEBREW_MONTHS = [
+  { code: 'Tishrei', hebcalName: 'Tishrei', hebrew: 'תשרי' },
+  { code: 'Cheshvan', hebcalName: 'Cheshvan', hebrew: 'חשון' },
+  { code: 'Kislev', hebcalName: 'Kislev', hebrew: 'כסלו' },
+  { code: 'Tevet', hebcalName: 'Tevet', hebrew: 'טבת' },
+  { code: 'Shvat', hebcalName: "Sh'vat", hebrew: 'שבט' },
+  { code: 'Adar', hebcalName: 'Adar', hebrew: 'אדר', regularYearOnly: true },
+  { code: 'Adar1', hebcalName: 'Adar I', hebrew: 'אדר א׳', leapYearOnly: true },
+  { code: 'Adar2', hebcalName: 'Adar II', hebrew: 'אדר ב׳', leapYearOnly: true },
+  { code: 'Nisan', hebcalName: 'Nisan', hebrew: 'ניסן' },
+  { code: 'Iyyar', hebcalName: 'Iyyar', hebrew: 'אייר' },
+  { code: 'Sivan', hebcalName: 'Sivan', hebrew: 'סיון' },
+  { code: 'Tamuz', hebcalName: 'Tamuz', hebrew: 'תמוז' },
+  { code: 'Av', hebcalName: 'Av', hebrew: 'אב' },
+  { code: 'Elul', hebcalName: 'Elul', hebrew: 'אלול' },
+];
+
+/** Hebrew numerals for days 1-30. */
+const HEBREW_DAYS = (
+  'א׳ ב׳ ג׳ ד׳ ה׳ ו׳ ז׳ ח׳ ט׳ י׳ י״א י״ב י״ג י״ד ט״ו ט״ז י״ז י״ח י״ט כ׳ ' +
+  'כ״א כ״ב כ״ג כ״ד כ״ה כ״ו כ״ז כ״ח כ״ט ל׳'
+).split(' ');
+
+/** Same 19-year-cycle rule as the server (src/lib/hebrewCalendar.ts). */
+const isHebrewLeapYear = (year) => (7 * year + 1) % 19 < 7;
+
 const state = {
+  /** 'g2h' (Gregorian -> Hebrew) or 'h2g' (Hebrew -> Gregorian) */
+  mode: 'g2h',
+  /** Hebrew date of the last result, used to prefill the Hebrew form. */
+  lastHebrew: null,
   /** YYYY-MM of the calendar currently shown */
   shownMonth: null,
   /**
@@ -83,9 +126,25 @@ async function getJson(url) {
 // ---------- single date ----------
 
 function setLoading(isLoading) {
-  button.disabled = isLoading;
-  button.setAttribute('aria-busy', String(isLoading));
-  button.querySelector('.label').textContent = isLoading ? 'Converting…' : 'Convert';
+  for (const b of [button, hButton]) {
+    b.disabled = isLoading;
+    b.setAttribute('aria-busy', String(isLoading));
+    b.querySelector('.label').textContent = isLoading ? 'Converting…' : 'Convert';
+  }
+}
+
+/** "2026-11-11" -> "Wednesday, November 11, 2026" (formatted in UTC so the day never shifts). */
+function longGregorian(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(0);
+  date.setUTCFullYear(y, m - 1, d);
+  return new Intl.DateTimeFormat('en', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
 }
 
 function showError(message) {
@@ -94,13 +153,30 @@ function showError(message) {
   errorEl.hidden = false;
 }
 
-function showResult(data) {
+function showResult(data, mode) {
   errorEl.hidden = true;
+  state.lastHebrew = data.hebrew;
 
   // textContent (not innerHTML) so nothing from the API can inject markup.
-  document.getElementById('hebrew-text').textContent = data.hebrew.hebrewText;
-  document.getElementById('transliteration').textContent =
-    `${data.hebrew.day} ${data.hebrew.month} ${data.hebrew.year}`;
+  const primary = document.getElementById('primary');
+  const secondary = document.getElementById('secondary');
+  const transliteration = `${data.hebrew.day} ${data.hebrew.month} ${data.hebrew.year}`;
+
+  if (mode === 'h2g') {
+    primary.lang = 'en';
+    primary.dir = 'ltr';
+    primary.textContent = longGregorian(data.gregorian.date);
+    // <bdi> keeps the Hebrew text's direction from scrambling the English around it.
+    const heb = document.createElement('bdi');
+    heb.lang = 'he';
+    heb.textContent = data.hebrew.hebrewText;
+    secondary.replaceChildren(heb, ` · ${transliteration}`);
+  } else {
+    primary.lang = 'he';
+    primary.dir = 'rtl';
+    primary.textContent = data.hebrew.hebrewText;
+    secondary.textContent = transliteration;
+  }
 
   const list = document.getElementById('events');
   list.replaceChildren();
@@ -118,7 +194,9 @@ function showResult(data) {
   }
 
   document.getElementById('meta').textContent =
-    `${data.gregorian.date}${data.gregorian.afterSunset ? ' (after sunset)' : ''} · ` +
+    (mode === 'h2g'
+      ? `${transliteration} → ${data.gregorian.date} · `
+      : `${data.gregorian.date}${data.gregorian.afterSunset ? ' (after sunset)' : ''} · `) +
     (data.cached ? 'served from cache' : 'fetched from Hebcal');
 
   resultEl.hidden = false;
@@ -143,12 +221,75 @@ async function convert() {
   setLoading(true);
   try {
     const data = await getJson(`/api/convert?${params}`);
-    if (seq === state.convertSeq) showResult(data);
+    if (seq === state.convertSeq) showResult(data, 'g2h');
   } catch (err) {
     if (seq === state.convertSeq) showError(err.message);
   } finally {
     if (seq === state.convertSeq) setLoading(false);
   }
+}
+
+// ---------- Hebrew -> Gregorian ----------
+
+/** Rebuilds the month list for the chosen year: Adar, or Adar I + Adar II in a leap year. */
+function fillHebrewMonths() {
+  const year = Number(hYear.value);
+  const leap = isHebrewLeapYear(year);
+  let selected = hMonth.value;
+  // Keep a sensible selection when switching between leap and regular years.
+  if (leap && selected === 'Adar') selected = 'Adar2';
+  if (!leap && (selected === 'Adar1' || selected === 'Adar2')) selected = 'Adar';
+
+  hMonth.replaceChildren(
+    ...HEBREW_MONTHS.filter((m) => (leap ? !m.regularYearOnly : !m.leapYearOnly)).map((m) => {
+      const label = m.hebcalName === 'Adar I' || m.hebcalName === 'Adar II' ? m.hebcalName : m.code;
+      return new Option(`${label} · ${m.hebrew}`, m.code);
+    }),
+  );
+  if (selected) hMonth.value = selected;
+  hLeap.textContent = Number.isInteger(year)
+    ? `${year} is ${leap ? 'a leap year (13 months)' : 'a regular year (12 months)'}`
+    : '';
+}
+
+function prefillHebrewForm() {
+  const h = state.lastHebrew;
+  if (!h) return;
+  hYear.value = h.year;
+  fillHebrewMonths();
+  const month = HEBREW_MONTHS.find((m) => m.hebcalName === h.month);
+  if (month) hMonth.value = month.code;
+  hDay.value = String(h.day);
+}
+
+async function convertFromHebrew() {
+  const params = new URLSearchParams({ year: hYear.value, month: hMonth.value, day: hDay.value });
+
+  const seq = ++state.convertSeq;
+  setLoading(true);
+  try {
+    const data = await getJson(`/api/convert-hebrew?${params}`);
+    if (seq !== state.convertSeq) return;
+    showResult(data, 'h2g');
+    // Keep the rest of the page in sync: Gregorian input + calendar on that day.
+    dateInput.value = data.gregorian.date;
+    const month = data.gregorian.date.slice(0, 7);
+    if (month !== state.shownMonth) loadCalendar(month);
+    else highlightSelected();
+  } catch (err) {
+    if (seq === state.convertSeq) showError(err.message);
+  } finally {
+    if (seq === state.convertSeq) setLoading(false);
+  }
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  tabG2h.setAttribute('aria-selected', String(mode === 'g2h'));
+  tabH2g.setAttribute('aria-selected', String(mode === 'h2g'));
+  form.hidden = mode !== 'g2h';
+  hebrewForm.hidden = mode !== 'h2g';
+  if (mode === 'h2g') prefillHebrewForm();
 }
 
 // ---------- month calendar ----------
@@ -281,13 +422,28 @@ dateInput.addEventListener('change', () => {
   if (dateInput.value) convert();
 });
 
-// Clicking a day in the calendar selects and converts it.
+// Clicking a day in the calendar selects and converts it (Gregorian -> Hebrew).
 calGrid.addEventListener('click', (event) => {
   const cell = event.target.closest('.cal-day[data-date]');
   if (!cell) return;
   dateInput.value = cell.dataset.date;
+  setMode('g2h');
   convert();
 });
+
+hebrewForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  convertFromHebrew();
+});
+hYear.addEventListener('input', fillHebrewMonths);
+tabG2h.addEventListener('click', () => setMode('g2h'));
+tabH2g.addEventListener('click', () => setMode('h2g'));
+
+// The left-to-right mark (\u200E) keeps "1 · א׳" from being reordered by the
+// browser's bidi algorithm, which would show it as "א׳ · 1".
+hDay.replaceChildren(
+  ...HEBREW_DAYS.map((letters, i) => new Option(`\u200E${i + 1} · ${letters}`, String(i + 1))),
+);
 
 document
   .getElementById('cal-prev')

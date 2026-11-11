@@ -11,10 +11,33 @@
       <main class="card converter">
         <header>
           <h1>Hebrew Date Converter</h1>
-          <p class="subtitle">Convert a Gregorian date to the Hebrew calendar.</p>
+          <p class="subtitle">Convert between the Gregorian and the Hebrew calendar.</p>
         </header>
 
-        <form id="convert-form" novalidate>
+        <div class="tabs" role="tablist" aria-label="Conversion direction">
+          <button
+            id="tab-g2h"
+            class="tab"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="convert-form"
+          >
+            Gregorian → Hebrew
+          </button>
+          <button
+            id="tab-h2g"
+            class="tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="hebrew-form"
+          >
+            Hebrew → Gregorian
+          </button>
+        </div>
+
+        <form id="convert-form" role="tabpanel" aria-labelledby="tab-g2h" novalidate>
           <div class="field">
             <label for="date">Gregorian date</label>
             <input id="date" name="date" type="date" required />
@@ -31,9 +54,32 @@
           </button>
         </form>
 
+        <form id="hebrew-form" role="tabpanel" aria-labelledby="tab-h2g" novalidate hidden>
+          <div class="hebrew-fields">
+            <div class="field">
+              <label for="h-day">Day</label>
+              <select id="h-day" name="day"></select>
+            </div>
+            <div class="field">
+              <label for="h-month">Month</label>
+              <select id="h-month" name="month"></select>
+            </div>
+            <div class="field">
+              <label for="h-year">Year</label>
+              <input id="h-year" name="year" type="number" min="3762" max="9999" required />
+            </div>
+          </div>
+          <p id="h-leap" class="hint"></p>
+
+          <button id="h-submit" type="submit">
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="label">Convert</span>
+          </button>
+        </form>
+
         <section id="result" class="result" aria-live="polite" hidden>
-          <p id="hebrew-text" class="hebrew" dir="rtl" lang="he"></p>
-          <p id="transliteration" class="transliteration"></p>
+          <p id="primary" class="primary"></p>
+          <p id="secondary" class="secondary"></p>
           <div class="events-block">
             <h2>Events</h2>
             <ul id="events" class="events"></ul>
@@ -73,7 +119,8 @@
           rel="noopener"
           >Hebcal REST API</a
         >
-        via this service's <code>GET /api/convert</code> and <code>GET /api/calendar</code>.
+        via this service's <code>/api/convert</code>, <code>/api/convert-hebrew</code> and
+        <code>/api/calendar</code>.
       </footer>
     </div>
 
