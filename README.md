@@ -26,7 +26,7 @@ Requires Node.js 20+ (developed on Node 26).
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000
+npm run dev          # http://localhost:3000 (or the next free port - the log prints the URL)
 ```
 
 Other scripts:
@@ -277,16 +277,17 @@ All settings come from environment variables (see [`.env.example`](.env.example)
 to override). They are validated at startup, so a wrong value stops the service immediately with a
 clear message instead of failing later.
 
-| Variable              | Default                            | Description                                       |
-| --------------------- | ---------------------------------- | ------------------------------------------------- |
-| `PORT`                | `3000`                             | HTTP port                                         |
-| `HEBCAL_BASE_URL`     | `https://www.hebcal.com/converter` | Hebcal converter endpoint                         |
-| `HEBCAL_HOLIDAYS_URL` | `https://www.hebcal.com/hebcal`    | Hebcal calendar endpoint (Israeli holidays)       |
-| `HEBCAL_TIMEOUT_MS`   | `5000`                             | Timeout per Hebcal request                        |
-| `HEBCAL_RETRIES`      | `1`                                | Extra attempts on network errors / 5xx            |
-| `CACHE_TTL_MS`        | `86400000` (24h)                   | How long a conversion is cached                   |
-| `CACHE_MAX_ENTRIES`   | `1000`                             | Cache size limit (least recently used is evicted) |
-| `LOG_LEVEL`           | `info`                             | `fatal` … `trace`, or `silent`                    |
+| Variable              | Default                            | Description                                                                                                                              |
+| --------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                | `3000`                             | HTTP port                                                                                                                                |
+| `STRICT_PORT`         | `false`                            | `false`: if `PORT` is taken, use the next free port (logged). `true`: fail instead - for production, where the platform assigns the port |
+| `HEBCAL_BASE_URL`     | `https://www.hebcal.com/converter` | Hebcal converter endpoint                                                                                                                |
+| `HEBCAL_HOLIDAYS_URL` | `https://www.hebcal.com/hebcal`    | Hebcal calendar endpoint (Israeli holidays)                                                                                              |
+| `HEBCAL_TIMEOUT_MS`   | `5000`                             | Timeout per Hebcal request                                                                                                               |
+| `HEBCAL_RETRIES`      | `1`                                | Extra attempts on network errors / 5xx                                                                                                   |
+| `CACHE_TTL_MS`        | `86400000` (24h)                   | How long a conversion is cached                                                                                                          |
+| `CACHE_MAX_ENTRIES`   | `1000`                             | Cache size limit (least recently used is evicted)                                                                                        |
+| `LOG_LEVEL`           | `info`                             | `fatal` … `trace`, or `silent`                                                                                                           |
 
 ## Design decisions
 
@@ -325,6 +326,11 @@ clear message instead of failing later.
   language; the workday API already returns `reason` and `hebrewReason`. API error messages stay
   English (they are for developers); the page shows a translated message per error `code`, with
   the API's detail in brackets.
+- **Starting next to other projects.** If port 3000 is taken, the server moves to the next free
+  port and logs the URL, like Vite does; `STRICT_PORT=true` turns that off for production. (A side
+  note: Express 5 reports listen errors through the `app.listen` callback instead of throwing, so
+  the first version logged "listening" while another process owned the port. The server now
+  creates the HTTP server itself and waits for `listening` or `error` explicitly.)
 - **Errors as types.** Each failure is a subclass of `AppError` with an HTTP status and code. One
   middleware converts them into the error JSON; unknown errors become a generic 500 and are logged
   with their stack.

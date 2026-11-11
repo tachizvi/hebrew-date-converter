@@ -1,6 +1,8 @@
+import type { Server } from 'node:http';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { TtlCache } from './lib/cache.js';
+import { listenWithFallback } from './lib/listen.js';
 import { createLogger } from './lib/logger.js';
 import { ConverterService } from './services/converterService.js';
 import { createHebcalClient } from './services/hebcalClient.js';
@@ -31,25 +33,25 @@ const workdayService = new WorkdayService(
 
 const app = createApp({ converterService, workdayService, logger });
 
-// Express 5 passes listen errors (e.g. EADDRINUSE) to this callback instead of
-// throwing, so the error must be checked here - otherwise we'd log "listening"
-// while another process owns the port.
-const server = app.listen(config.port, (err?: Error) => {
-  if (err) {
-    const inUse = (err as NodeJS.ErrnoException).code === 'EADDRINUSE';
-    logger.fatal(
-      { err, port: config.port },
-      inUse
-        ? `port ${config.port} is already in use - stop the other process or set PORT (e.g. PORT=3001)`
-        : 'could not start the server',
-    );
-    process.exit(1);
-  }
+// If the port is taken (e.g. by another local project), move on to the next free
+// one instead of failing - unless STRICT_PORT=true, as in production where the
+// platform assigns the port and a different one would be unreachable.
+let server: Server;
+try {
+  const started = await listenWithFallback(app, {
+    port: config.port,
+    strict: config.strictPort,
+    onPortInUse: (port) => logger.warn(`port ${port} is in use, trying ${port + 1}`),
+  });
+  server = started.server;
   logger.info(
-    { port: config.port, hebcal: config.hebcal.baseUrl },
-    `listening on http://localhost:${config.port}`,
+    { port: started.port, hebcal: config.hebcal.baseUrl },
+    `listening on http://localhost:${started.port}`,
   );
-});
+} catch (err) {
+  logger.fatal({ err, port: config.port }, 'could not start the server');
+  process.exit(1);
+}
 
 // Graceful shutdown: stop accepting connections, let in-flight requests finish.
 function shutdown(signal: string) {
