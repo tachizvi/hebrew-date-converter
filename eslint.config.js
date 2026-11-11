@@ -6,9 +6,23 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    rules: {
+      // Allow intentionally unused names prefixed with "_" (e.g. Express's 4-arg error handler).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
     files: ['public/**/*.js'],
     languageOptions: {
-      globals: { document: 'readonly', window: 'readonly', fetch: 'readonly', URLSearchParams: 'readonly' },
+      globals: {
+        document: 'readonly',
+        window: 'readonly',
+        fetch: 'readonly',
+        URLSearchParams: 'readonly',
+      },
     },
   },
 );

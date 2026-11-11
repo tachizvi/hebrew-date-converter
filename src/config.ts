@@ -11,7 +11,11 @@ const envSchema = z.object({
   HEBCAL_BASE_URL: z.url().default('https://www.hebcal.com/converter'),
   HEBCAL_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   HEBCAL_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
-  CACHE_TTL_MS: z.coerce.number().int().positive().default(24 * 60 * 60 * 1000),
+  CACHE_TTL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(24 * 60 * 60 * 1000),
   CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(1000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
@@ -32,7 +36,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const e = parsed.data;
   return {
     port: e.PORT,
-    hebcal: { baseUrl: e.HEBCAL_BASE_URL, timeoutMs: e.HEBCAL_TIMEOUT_MS, retries: e.HEBCAL_RETRIES },
+    hebcal: {
+      baseUrl: e.HEBCAL_BASE_URL,
+      timeoutMs: e.HEBCAL_TIMEOUT_MS,
+      retries: e.HEBCAL_RETRIES,
+    },
     cache: { ttlMs: e.CACHE_TTL_MS, maxEntries: e.CACHE_MAX_ENTRIES },
     logLevel: e.LOG_LEVEL,
   };

@@ -46,7 +46,11 @@ export function parseConvertQuery(raw: unknown): ConvertQuery {
 }
 
 /** Formats a ConvertQuery back to YYYY-MM-DD (also used as part of the cache key). */
-export function toIsoDate({ year, month, day }: Pick<ConvertQuery, 'year' | 'month' | 'day'>): string {
+export function toIsoDate({
+  year,
+  month,
+  day,
+}: Pick<ConvertQuery, 'year' | 'month' | 'day'>): string {
   const pad = (n: number, len: number) => String(n).padStart(len, '0');
   return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
 }

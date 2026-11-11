@@ -17,7 +17,10 @@ const converterService = new ConverterService(hebcalClient, cache, logger);
 const app = createApp({ converterService, logger });
 
 const server = app.listen(config.port, () => {
-  logger.info({ port: config.port, hebcal: config.hebcal.baseUrl }, `listening on http://localhost:${config.port}`);
+  logger.info(
+    { port: config.port, hebcal: config.hebcal.baseUrl },
+    `listening on http://localhost:${config.port}`,
+  );
 });
 
 // Graceful shutdown: stop accepting connections, let in-flight requests finish.

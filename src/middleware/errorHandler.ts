@@ -4,7 +4,11 @@ import { AppError } from '../lib/errors.js';
 /** Unknown /api routes get a JSON 404 rather than Express's HTML page. */
 export const notFoundHandler: RequestHandler = (req, res) => {
   res.status(404).json({
-    error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}`, requestId: req.id },
+    error: {
+      code: 'NOT_FOUND',
+      message: `No route for ${req.method} ${req.path}`,
+      requestId: req.id,
+    },
   });
 };
 
